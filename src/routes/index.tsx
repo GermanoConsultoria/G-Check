@@ -94,6 +94,9 @@ function Dashboard() {
 
   const ativas = checklists.filter((c) => c.ativo);
   const inativas = checklists.length - ativas.length;
+  // Admin vê todas as checklists ativas por inteiro. Funcionário vê versões
+  // "recortadas": cada checklist mostra só os itens atribuídos a ele, e a
+  // checklist inteira some se nenhum item dela for dele (evita "cascas vazias").
   const visiveis: Checklist[] = isAdmin
     ? ativas
     : ativas

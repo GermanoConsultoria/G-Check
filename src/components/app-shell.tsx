@@ -15,6 +15,9 @@ const navAdmin = [
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { isAdmin } = useAuth();
+  // Item "Funcionários" só aparece pra admin — a rota /funcionarios também se
+  // autoprotege (ver FuncionariosPage em funcionarios.tsx), então isto aqui é
+  // só para não oferecer um link que levaria a uma tela de acesso negado.
   const nav = isAdmin ? [...navBase, ...navAdmin] : navBase;
 
   return (

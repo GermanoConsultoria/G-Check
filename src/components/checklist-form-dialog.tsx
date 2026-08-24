@@ -116,6 +116,10 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
   }
 
   function onSubmit(values: ChecklistFormValues) {
+    // "itemId" só existe em itens que vieram de uma checklist existente
+    // (setado em valoresPadrao); itens adicionados no formulário não têm.
+    // O store (editarChecklist) usa essa presença/ausência para decidir se
+    // preserva o status do item ou o cria do zero — ver checksup-store.tsx.
     const itens = values.itens.map((i) => {
       const detalhe = i.detalhe?.trim();
       return {

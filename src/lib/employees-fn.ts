@@ -2,6 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+/**
+ * Ponto crítico de segurança deste arquivo: criar/editar usuários exige a
+ * SERVICE ROLE KEY do Supabase (bypassa RLS), que só existe no servidor
+ * (process.env, nunca import.meta.env) e nunca é exposta ao client.
+ *
+ * Antes de liberar esse poder, revalidamos a permissão no servidor mesmo que
+ * a UI já esconda os botões de quem não é admin — o accessToken do chamador
+ * chega como parâmetro (não é lido de cookie/sessão do server) e é usado com
+ * a ANON key para: 1) confirmar que o token é de um usuário autenticado de
+ * verdade (auth.getUser) e 2) checar o role dele na tabela profiles. Só então
+ * o client com a service role key é devolvido.
+ */
 async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
   const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
   const anonKey = import.meta.env["VITE_SUPABASE_ANON_KEY"] as string | undefined;
@@ -43,6 +55,7 @@ const criarInputSchema = z.object({
   senha: z.string().min(6),
 });
 
+/** Server function: roda só no servidor (nunca é enviada ao bundle do client). */
 export const criarFuncionario = createServerFn({ method: "POST" })
   .validator((data: unknown) => criarInputSchema.parse(data))
   .handler(async ({ data }) => {
@@ -83,6 +96,7 @@ export const editarFuncionario = createServerFn({ method: "POST" })
       email: data.email,
       user_metadata: { nome: data.nome },
     };
+    // Senha é opcional na edição: só troca se o admin preencheu um valor novo.
     if (data.senha) authUpdate.password = data.senha;
 
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(

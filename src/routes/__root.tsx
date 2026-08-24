@@ -119,6 +119,22 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Guarda de rota client-side: nenhuma rota é protegida individualmente, este
+ * componente único (renderizado no __root, acima do <Outlet />) decide se a
+ * página pedida pode aparecer, com base na sessão do AuthProvider.
+ *
+ * - Sem sessão fora de /login → redireciona para /login.
+ * - Com sessão em /login → redireciona para /.
+ * - Enquanto isLoading, mostra um spinner simples (evita piscar a tela errada
+ *   antes do Supabase confirmar se há sessão salva).
+ *
+ * O redirect roda em useEffect (depois do render), então nos dois casos de
+ * redirecionamento retornamos null por um instante — a página protegida nunca
+ * chega a ser exibida para quem não devia vê-la.
+ * IMPORTANTE: isso é só UX; a proteção real dos dados é a RLS do Supabase e a
+ * checagem de role no servidor (ver employees-fn.ts).
+ */
 function AuthGate({ children }: { children: ReactNode }) {
   const { session, isLoading } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -152,6 +168,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* Ordem importa: ChecksupProvider chama useAuth() (precisa estar dentro de
+          AuthProvider) e sua query só habilita com sessão presente — mas ele fica
+          fora do AuthGate para já ter os dados prontos assim que o gate libera. */}
       <AuthProvider>
         <ChecksupProvider>
           <AuthGate>

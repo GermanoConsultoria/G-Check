@@ -44,6 +44,7 @@ export interface ChecklistInput {
   itens: ItemInput[];
 }
 
+/** Gera um id legível a partir do nome (usado como PK da checklist no Supabase). */
 function slugify(texto: string) {
   return texto
     .toLowerCase()
@@ -57,6 +58,11 @@ const QUERY_KEY = ["checklists"] as const;
 
 type ChecklistWithItems = ChecklistRow & { checklist_items: ChecklistItemRow[] };
 
+/**
+ * Busca checklists + itens em uma única query (join implícito do Postgrest via
+ * "checklist_items(*)"). Ordena checklists por horário e, dentro de cada uma,
+ * os itens pela coluna "posicao" (ordem definida na criação/edição).
+ */
 async function fetchChecklists(): Promise<Checklist[]> {
   const { data, error } = await supabase
     .from("checklists")
@@ -100,6 +106,7 @@ const ChecksupContext = React.createContext<Ctx | null>(null);
 export function ChecksupProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { session } = useAuth();
+  // "enabled: !!session" evita chamar o Supabase (e estourar RLS) antes do login terminar.
   const query = useQuery({ queryKey: QUERY_KEY, queryFn: fetchChecklists, enabled: !!session });
 
   const toggleItemMutation = useMutation({
@@ -112,6 +119,7 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
     },
     onError: () => {
       toast.error("Não foi possível atualizar o item.");
+      // Reverte a atualização otimista buscando o estado real do servidor.
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
@@ -119,6 +127,9 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
   const toggleItem = React.useCallback(
     (checklistId: string, itemId: string) => {
       let next: ItemStatus = "concluido";
+      // Atualização otimista: aplica a mudança no cache do React Query antes da
+      // resposta do servidor, para o toque no checkbox parecer instantâneo.
+      // "next" é capturado pelo closure para ser reaproveitado na mutation abaixo.
       queryClient.setQueryData<Checklist[]>(QUERY_KEY, (prev) =>
         (prev ?? []).map((c) =>
           c.id !== checklistId
@@ -196,6 +207,8 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
 
   const criarChecklistMutation = useMutation({
     mutationFn: async (input: ChecklistInput) => {
+      // Id da checklist é o slug do nome; se já existir (mesmo nome usado antes),
+      // acrescenta um sufixo numérico até achar um id livre.
       const existentes = (queryClient.getQueryData<Checklist[]>(QUERY_KEY) ?? []).map((c) => c.id);
       const baseId = slugify(input.nome) || "checklist";
       let id = baseId;
@@ -212,6 +225,7 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
       });
       if (checklistError) throw checklistError;
 
+      // Ids dos itens seguem "<id-da-checklist>-<posição>" — todo item nasce "pendente".
       const itensPayload = input.itens.map((it, index) => ({
         id: `${id}-${index + 1}`,
         checklist_id: id,
@@ -224,6 +238,8 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
 
       const { error: itensError } = await supabase.from("checklist_items").insert(itensPayload);
       if (itensError) {
+        // Não há transação entre as duas tabelas, então se os itens falharem
+        // desfazemos manualmente a checklist já inserida para não deixar lixo órfão.
         await supabase.from("checklists").delete().eq("id", id);
         throw itensError;
       }
@@ -247,6 +263,12 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
       const statusPorId = new Map((atual?.itens ?? []).map((i) => [i.id, i.status]));
       const idsUsados = new Set<string>();
 
+      // Reconciliação de itens: o form manda "itemId" para itens que já existiam
+      // (checklist-form-dialog.tsx) e nada para itens novos. Aqui reaproveitamos o
+      // id original — e portanto o status ("concluido"/"pendente") — sempre que ele
+      // ainda existe e não foi usado por outro item nesta mesma edição; caso
+      // contrário (item novo, ou id duplicado/inválido) geramos um UUID novo, que
+      // sempre nasce "pendente". Isso evita resetar o progresso já feito ao editar.
       const itensFinal = input.itens.map((it, index) => {
         let id = it.id && statusPorId.has(it.id) && !idsUsados.has(it.id) ? it.id : undefined;
         if (!id) id = crypto.randomUUID();
@@ -263,6 +285,7 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
+      // Itens que existiam antes mas não estão mais na lista final são removidos.
       const idsFinal = new Set(itensFinal.map((i) => i.id));
       const idsRemover = (atual?.itens ?? []).map((i) => i.id).filter((id) => !idsFinal.has(id));
 
@@ -332,6 +355,7 @@ export function useChecksup() {
   return ctx;
 }
 
+/** Contagem de itens concluídos/pendentes e percentual — usado no dashboard e nas cards. */
 export function progresso(c: Checklist) {
   const total = c.itens.length;
   const feitos = c.itens.filter((i) => i.status === "concluido").length;
@@ -345,6 +369,7 @@ export function progresso(c: Checklist) {
 
 export type ChecklistEstado = "concluido" | "em_andamento" | "pendente";
 
+/** Deriva o estado da checklist a partir do progresso — não é um campo salvo no banco. */
 export function estado(c: Checklist): ChecklistEstado {
   const { feitos, total } = progresso(c);
   if (total > 0 && feitos === total) return "concluido";

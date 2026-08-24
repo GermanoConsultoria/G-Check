@@ -27,12 +27,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = React.useState<Profile | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
+  // Efeito 1: só cuida da sessão (token) do Supabase Auth — lê a sessão salva no
+  // storage do browser ao montar e escuta login/logout/refresh de token depois.
+  // "ativo" evita setState após o componente desmontar (efeitos assíncronos).
   React.useEffect(() => {
     let ativo = true;
 
     supabase.auth.getSession().then(({ data }) => {
       if (!ativo) return;
       setSession(data.session);
+      // Sem sessão não há perfil a buscar, então já libera o loading aqui;
+      // com sessão, quem libera é o efeito 2 (depois de buscar o perfil).
       if (!data.session) setIsLoading(false);
     });
 
@@ -51,6 +56,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Efeito 2: sempre que a sessão muda, busca o perfil (nome/role) na tabela
+  // "profiles". Separado do efeito 1 porque a sessão é assíncrona/reativa —
+  // não dá pra buscar o perfil antes de saber que existe um usuário logado.
   React.useEffect(() => {
     if (!session) return;
     let ativo = true;
@@ -86,6 +94,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       profile,
       isLoading,
+      // "admin" x "funcionario" controla navegação/UI aqui no client; a segurança
+      // de verdade é imposta pelas policies de RLS no Supabase (o client nunca
+      // deve ser a única barreira para dados sensíveis).
       isAdmin: profile?.role === "admin",
       signIn,
       signOut,

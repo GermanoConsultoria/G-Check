@@ -128,6 +128,10 @@ function ChecklistCard({ c }: { c: Checklist }) {
           <ul className="divide-y divide-border">
             {c.itens.map((i) => {
               const feito = i.status === "concluido";
+              // Admin marca qualquer item; funcionário só o que está atribuído a
+              // ele (comparação por nome, ver ehResponsavel em checksup-store.tsx).
+              // Reforçado no banco pela migration
+              // 20260824140000_restrict_item_status_to_responsavel.sql.
               const podeMarcar = isAdmin || ehResponsavel(i, profile?.nome);
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
