@@ -1,10 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
-import { Check, ChevronDown, Clock, RotateCcw, User } from "lucide-react";
+import { Check, ChevronDown, Clock, Filter, RotateCcw, User, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { EditarChecklistDialog, NovaChecklistDialog } from "@/components/checklist-form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
@@ -16,6 +24,8 @@ import {
   turnos,
   useChecksup,
   type Checklist,
+  type ChecklistEstado,
+  type Turno,
 } from "@/lib/checksup-store";
 
 export const Route = createFileRoute("/checklists")({
@@ -37,17 +47,123 @@ export const Route = createFileRoute("/checklists")({
   component: ChecklistsPage,
 });
 
-const filtros = [
-  { id: "todos", label: "Todos" },
+const estadoOptions: { id: ChecklistEstado; label: string }[] = [
   { id: "pendente", label: "Não iniciados" },
   { id: "em_andamento", label: "Em andamento" },
   { id: "concluido", label: "Concluídos" },
-] as const;
+];
 
-const filtrosTurno = [
-  { id: "todos", label: "Todos os turnos" },
-  ...turnos.map((t) => ({ id: t, label: t })),
-] as const;
+const turnoOptions: { id: Turno; label: string }[] = turnos.map((t) => ({ id: t, label: t }));
+
+/**
+ * Botão de filtros: abre um popover com as opções agrupadas (Estado/Turno)
+ * onde cada clique já liga/desliga aquele filtro (multi-seleção, sem passo
+ * extra de "aplicar"). As opções ativas aparecem como badges removíveis ao
+ * lado, cada uma com seu próprio X.
+ */
+function FiltrosChecklist({
+  estadosSelecionados,
+  turnosSelecionados,
+  onToggleEstado,
+  onToggleTurno,
+  onLimpar,
+}: {
+  estadosSelecionados: ChecklistEstado[];
+  turnosSelecionados: Turno[];
+  onToggleEstado: (id: ChecklistEstado) => void;
+  onToggleTurno: (id: Turno) => void;
+  onLimpar: () => void;
+}) {
+  const total = estadosSelecionados.length + turnosSelecionados.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Filter className="size-4" />
+            Filtros
+            {total > 0 && (
+              <Badge className="h-5 min-w-5 justify-center rounded-full border-transparent bg-primary px-1 text-primary-foreground">
+                {total}
+              </Badge>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-60 p-0">
+          <Command>
+            <CommandList>
+              <CommandGroup heading="Estado">
+                {estadoOptions.map((o) => {
+                  const ativo = estadosSelecionados.includes(o.id);
+                  return (
+                    <CommandItem
+                      key={o.id}
+                      onSelect={() => onToggleEstado(o.id)}
+                      className="justify-between"
+                    >
+                      {o.label}
+                      {ativo && <Check className="size-4 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading="Turno">
+                {turnoOptions.map((o) => {
+                  const ativo = turnosSelecionados.includes(o.id);
+                  return (
+                    <CommandItem
+                      key={o.id}
+                      onSelect={() => onToggleTurno(o.id)}
+                      className="justify-between"
+                    >
+                      {o.label}
+                      {ativo && <Check className="size-4 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      {estadosSelecionados.map((id) => (
+        <Badge key={id} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1.5 font-medium">
+          {estadoOptions.find((o) => o.id === id)?.label}
+          <button
+            onClick={() => onToggleEstado(id)}
+            aria-label={`Remover filtro ${estadoLabel[id]}`}
+            className="rounded-full p-0.5 hover:bg-foreground/10"
+          >
+            <X className="size-3" />
+          </button>
+        </Badge>
+      ))}
+      {turnosSelecionados.map((t) => (
+        <Badge key={t} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1.5 font-medium">
+          {t}
+          <button
+            onClick={() => onToggleTurno(t)}
+            aria-label={`Remover filtro ${t}`}
+            className="rounded-full p-0.5 hover:bg-foreground/10"
+          >
+            <X className="size-3" />
+          </button>
+        </Badge>
+      ))}
+      {total > 0 && (
+        <button
+          onClick={onLimpar}
+          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Limpar tudo
+        </button>
+      )}
+    </div>
+  );
+}
 
 function EstadoBadge({ c }: { c: Checklist }) {
   const e = estado(c);
@@ -199,9 +315,25 @@ function ChecklistCard({ c }: { c: Checklist }) {
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useChecksup();
   const { isAdmin, profile } = useAuth();
-  const [filtro, setFiltro] = React.useState<(typeof filtros)[number]["id"]>("todos");
-  const [filtroTurno, setFiltroTurno] =
-    React.useState<(typeof filtrosTurno)[number]["id"]>("todos");
+  const [estadosSelecionados, setEstadosSelecionados] = React.useState<ChecklistEstado[]>([]);
+  const [turnosSelecionados, setTurnosSelecionados] = React.useState<Turno[]>([]);
+
+  function toggleEstado(id: ChecklistEstado) {
+    setEstadosSelecionados((prev) =>
+      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
+    );
+  }
+
+  function toggleTurno(id: Turno) {
+    setTurnosSelecionados((prev) =>
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id],
+    );
+  }
+
+  function limparFiltros() {
+    setEstadosSelecionados([]);
+    setTurnosSelecionados([]);
+  }
 
   if (isLoading) {
     return (
@@ -225,48 +357,22 @@ function ChecklistsPage() {
 
   const lista = minhasChecklists.filter(
     (c) =>
-      (filtro === "todos" || estado(c) === filtro) &&
-      (filtroTurno === "todos" || c.turno === filtroTurno),
+      (estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c))) &&
+      (turnosSelecionados.length === 0 || turnosSelecionados.includes(c.turno as Turno)),
   );
 
   return (
     <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
       <div className="mx-auto max-w-4xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            {filtros.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFiltro(f.id)}
-                className={cn(
-                  "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
-                  filtro === f.id
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border text-muted-foreground hover:bg-accent",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <FiltrosChecklist
+            estadosSelecionados={estadosSelecionados}
+            turnosSelecionados={turnosSelecionados}
+            onToggleEstado={toggleEstado}
+            onToggleTurno={toggleTurno}
+            onLimpar={limparFiltros}
+          />
           {isAdmin && <NovaChecklistDialog />}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {filtrosTurno.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFiltroTurno(f.id)}
-              className={cn(
-                "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
-                filtroTurno === f.id
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-accent",
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
         </div>
 
         <div className="space-y-4">
