@@ -352,3 +352,9 @@ export const estadoLabel: Record<ChecklistEstado, string> = {
   em_andamento: "Em andamento",
   pendente: "Não iniciado",
 };
+
+/** Compara o responsável do item com o nome de perfil informado (ignora caixa e espaços). */
+export function ehResponsavel(item: ChecklistItem, nome?: string | null) {
+  if (!nome) return false;
+  return item.responsavel.trim().toLowerCase() === nome.trim().toLowerCase();
+}

@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
 import {
+  ehResponsavel,
   estado,
   estadoLabel,
   progresso,
@@ -67,7 +68,7 @@ function EstadoBadge({ c }: { c: Checklist }) {
 
 function ChecklistCard({ c }: { c: Checklist }) {
   const { toggleItem, concluirTodos, reabrir } = useChecksup();
-  const { isAdmin } = useAuth();
+  const { isAdmin, profile } = useAuth();
   const [aberto, setAberto] = React.useState(false);
   const p = progresso(c);
 
@@ -117,16 +118,25 @@ function ChecklistCard({ c }: { c: Checklist }) {
           <ul className="divide-y divide-border">
             {c.itens.map((i) => {
               const feito = i.status === "concluido";
+              const podeMarcar = isAdmin || ehResponsavel(i, profile?.nome);
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
                   <button
-                    onClick={() => toggleItem(c.id, i.id)}
-                    aria-label={feito ? `Reabrir ${i.titulo}` : `Concluir ${i.titulo}`}
+                    onClick={() => podeMarcar && toggleItem(c.id, i.id)}
+                    disabled={!podeMarcar}
+                    aria-label={
+                      !podeMarcar
+                        ? `Item atribuído a ${i.responsavel}`
+                        : feito
+                          ? `Reabrir ${i.titulo}`
+                          : `Concluir ${i.titulo}`
+                    }
                     className={cn(
                       "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
                       feito
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-input hover:border-primary",
+                      !podeMarcar && "cursor-not-allowed opacity-50 hover:border-input",
                     )}
                   >
                     {feito && <Check className="size-3.5" />}
@@ -151,19 +161,21 @@ function ChecklistCard({ c }: { c: Checklist }) {
               );
             })}
           </ul>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => concluirTodos(c.id)} disabled={p.pendentes === 0}>
-              <Check className="size-4" /> Concluir rotina
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => reabrir(c.id)}
-              disabled={p.feitos === 0}
-            >
-              <RotateCcw className="size-4" /> Reabrir
-            </Button>
-          </div>
+          {isAdmin && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => concluirTodos(c.id)} disabled={p.pendentes === 0}>
+                <Check className="size-4" /> Concluir rotina
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => reabrir(c.id)}
+                disabled={p.feitos === 0}
+              >
+                <RotateCcw className="size-4" /> Reabrir
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -172,7 +184,7 @@ function ChecklistCard({ c }: { c: Checklist }) {
 
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useChecksup();
-  const { isAdmin } = useAuth();
+  const { isAdmin, profile } = useAuth();
   const [filtro, setFiltro] = React.useState<(typeof filtros)[number]["id"]>("todos");
   const [filtroTurno, setFiltroTurno] =
     React.useState<(typeof filtrosTurno)[number]["id"]>("todos");
@@ -193,7 +205,11 @@ function ChecklistsPage() {
     );
   }
 
-  const lista = checklists.filter(
+  const minhasChecklists = isAdmin
+    ? checklists
+    : checklists.filter((c) => c.itens.some((i) => ehResponsavel(i, profile?.nome)));
+
+  const lista = minhasChecklists.filter(
     (c) =>
       (filtro === "todos" || estado(c) === filtro) &&
       (filtroTurno === "todos" || c.turno === filtroTurno),

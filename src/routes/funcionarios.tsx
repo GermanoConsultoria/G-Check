@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuth, type Profile } from "@/lib/auth-store";
 import { criarFuncionario, editarFuncionario } from "@/lib/employees-fn";
-import { supabase } from "@/lib/supabase";
+import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
 
 export const Route = createFileRoute("/funcionarios")({
   head: () => ({
@@ -37,18 +37,6 @@ export const Route = createFileRoute("/funcionarios")({
   }),
   component: FuncionariosPage,
 });
-
-const QUERY_KEY = ["profiles"] as const;
-
-async function fetchProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, nome, email, role")
-    .order("nome", { ascending: true })
-    .returns<Profile[]>();
-  if (error) throw error;
-  return data ?? [];
-}
 
 const funcionarioSchema = z.object({
   nome: z.string().trim().min(1, "Informe o nome."),
@@ -87,7 +75,7 @@ function NovoFuncionarioDialog() {
         },
       });
       toast.success("Funcionário cadastrado.");
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: PROFILES_QUERY_KEY });
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível cadastrar.");
@@ -203,7 +191,7 @@ function EditarFuncionarioDialog({ profile }: { profile: Profile }) {
         },
       });
       toast.success("Funcionário atualizado.");
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: PROFILES_QUERY_KEY });
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar.");
@@ -293,7 +281,11 @@ function EditarFuncionarioDialog({ profile }: { profile: Profile }) {
 
 function FuncionariosPage() {
   const { isAdmin, isLoading: authLoading } = useAuth();
-  const query = useQuery({ queryKey: QUERY_KEY, queryFn: fetchProfiles, enabled: isAdmin });
+  const query = useQuery({
+    queryKey: PROFILES_QUERY_KEY,
+    queryFn: fetchProfiles,
+    enabled: isAdmin,
+  });
 
   if (authLoading) return null;
 

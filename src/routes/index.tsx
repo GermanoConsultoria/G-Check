@@ -5,7 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { estado, estadoLabel, progresso, useChecksup } from "@/lib/checksup-store";
+import { useAuth } from "@/lib/auth-store";
+import {
+  ehResponsavel,
+  estado,
+  estadoLabel,
+  progresso,
+  useChecksup,
+  type Checklist,
+} from "@/lib/checksup-store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -62,10 +70,15 @@ function Metric({
 
 function Dashboard() {
   const { checklists, isLoading, isError } = useChecksup();
+  const { isAdmin, profile } = useAuth();
+
+  const subtitle = isAdmin
+    ? "Resumo do dia — Loja Centro"
+    : `Tarefas atribuídas a ${profile?.nome ?? "você"}`;
 
   if (isLoading) {
     return (
-      <AppShell title="Dashboard" subtitle="Resumo do dia — Loja Centro">
+      <AppShell title="Dashboard" subtitle={subtitle}>
         <p className="text-sm text-muted-foreground">Carregando rotinas…</p>
       </AppShell>
     );
@@ -73,13 +86,19 @@ function Dashboard() {
 
   if (isError) {
     return (
-      <AppShell title="Dashboard" subtitle="Resumo do dia — Loja Centro">
+      <AppShell title="Dashboard" subtitle={subtitle}>
         <p className="text-sm text-destructive">Não foi possível carregar as rotinas.</p>
       </AppShell>
     );
   }
 
-  const totais = checklists.reduce(
+  const visiveis: Checklist[] = isAdmin
+    ? checklists
+    : checklists
+        .map((c) => ({ ...c, itens: c.itens.filter((i) => ehResponsavel(i, profile?.nome)) }))
+        .filter((c) => c.itens.length > 0);
+
+  const totais = visiveis.reduce(
     (acc, c) => {
       const p = progresso(c);
       acc.itens += p.total;
@@ -92,12 +111,12 @@ function Dashboard() {
   );
 
   const taxa = totais.itens ? Math.round((totais.feitos / totais.itens) * 100) : 0;
-  const pendencias = checklists
+  const pendencias = visiveis
     .flatMap((c) => c.itens.filter((i) => i.status === "pendente").map((i) => ({ c, i })))
     .slice(0, 6);
 
   return (
-    <AppShell title="Dashboard" subtitle="Resumo do dia — Loja Centro">
+    <AppShell title="Dashboard" subtitle={subtitle}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Metric
@@ -109,7 +128,7 @@ function Dashboard() {
           />
           <Metric
             label="Checklists concluídos"
-            value={`${totais.rotinasConcluidas}/${checklists.length}`}
+            value={`${totais.rotinasConcluidas}/${visiveis.length}`}
             hint="rotinas finalizadas hoje"
             icon={CheckCircle2}
             tone="primary"
@@ -123,7 +142,7 @@ function Dashboard() {
           />
           <Metric
             label="Rotinas ativas"
-            value={String(checklists.length)}
+            value={String(visiveis.length)}
             hint="turnos manhã, tarde e noite"
             icon={ListChecks}
             tone="neutral"
@@ -139,7 +158,7 @@ function Dashboard() {
               </Button>
             </div>
             <ul className="mt-4 space-y-4">
-              {checklists.map((c) => {
+              {visiveis.map((c) => {
                 const p = progresso(c);
                 const e = estado(c);
                 return (
@@ -167,6 +186,13 @@ function Dashboard() {
                   </li>
                 );
               })}
+              {visiveis.length === 0 && (
+                <li className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
+                  {isAdmin
+                    ? "Nenhuma rotina cadastrada."
+                    : "Nenhuma rotina com itens atribuídos a você no momento."}
+                </li>
+              )}
             </ul>
           </section>
 
@@ -184,7 +210,7 @@ function Dashboard() {
                   </p>
                 </li>
               ))}
-              {pendencias.length === 0 && (
+              {pendencias.length === 0 && visiveis.length > 0 && (
                 <li className="rounded-xl bg-primary/10 p-4 text-sm text-primary">
                   Todas as rotinas do dia estão concluídas.
                 </li>

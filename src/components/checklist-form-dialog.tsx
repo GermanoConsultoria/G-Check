@@ -1,5 +1,6 @@
 import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
 import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { turnos, useChecksup, type Checklist } from "@/lib/checksup-store";
+import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
 
 const itemSchema = z.object({
   itemId: z.string().optional(),
@@ -90,6 +92,13 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
     control: form.control,
     name: "itens",
   });
+
+  const { data: funcionarios = [] } = useQuery({
+    queryKey: PROFILES_QUERY_KEY,
+    queryFn: fetchProfiles,
+    enabled: open,
+  });
+  const nomesFuncionarios = funcionarios.map((f) => f.nome);
 
   function onOpenChange(next: boolean) {
     setOpen(next);
@@ -274,15 +283,37 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
                     <FormField
                       control={form.control}
                       name={`itens.${index}.responsavel`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Responsável</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Ex.: Ana P." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      render={({ field }) => {
+                        const opcoes =
+                          field.value && !nomesFuncionarios.includes(field.value)
+                            ? [field.value, ...nomesFuncionarios]
+                            : nomesFuncionarios;
+                        return (
+                          <FormItem>
+                            <FormLabel>Responsável</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione um funcionário" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {opcoes.length === 0 && (
+                                  <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                                    Nenhum funcionário cadastrado
+                                  </p>
+                                )}
+                                {opcoes.map((nome) => (
+                                  <SelectItem key={nome} value={nome}>
+                                    {nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                   </div>
                 ))}
