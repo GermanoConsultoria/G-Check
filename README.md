@@ -1,4 +1,4 @@
-# Checkup Supermercado
+# Checksup Supermercado
 
 Desenvolva um MVP web minimalista chamado Checksup, inspirado em um app de rotinas para restaurantes, mas voltado a supermercados. A navegação lateral deve ter Dashboard e Checklists. Crie uma experiência pronta para validar: dashboard com visão rápida de pendências, checklists concluídos e taxa de execução; tela de Checklists com rotinas exemplares de supermercado (abertura da loja, reposição de gôndolas, controle de validade, limpeza e fechamento), estados e possibilidade de abrir/concluir itens. Use interface limpa, profissional e responsiva em português do Brasil. Não implemente integrações complexas ou autenticação neste MVP; use dados de demonstração e foco no fluxo visual funcional.
 
