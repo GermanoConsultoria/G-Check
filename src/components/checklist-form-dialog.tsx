@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { turnos, useChecksup, type Checklist } from "@/lib/checksup-store";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
@@ -47,6 +48,7 @@ const checklistSchema = z.object({
   setor: z.string().trim().min(1, "Informe o setor."),
   turno: z.enum(turnos, { message: "Selecione o turno." }),
   horario: z.string().trim().min(1, "Informe o horário."),
+  ativo: z.boolean(),
   itens: z.array(itemSchema).min(1, "Adicione ao menos um item."),
 });
 
@@ -62,13 +64,21 @@ function turnoOuPadrao(turno: string): (typeof turnos)[number] {
 
 function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
   if (!checklist) {
-    return { nome: "", setor: "", turno: turnos[0], horario: "", itens: [itemVazio] };
+    return {
+      nome: "",
+      setor: "",
+      turno: turnos[0],
+      horario: "",
+      ativo: true,
+      itens: [itemVazio],
+    };
   }
   return {
     nome: checklist.nome,
     setor: checklist.setor,
     turno: turnoOuPadrao(checklist.turno),
     horario: checklist.horario,
+    ativo: checklist.ativo,
     itens: checklist.itens.map((i) => ({
       itemId: i.id,
       titulo: i.titulo,
@@ -121,6 +131,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
       setor: values.setor,
       turno: values.turno,
       horario: values.horario,
+      ativo: values.ativo,
       itens,
     };
     if (editando && checklist) {
@@ -218,6 +229,23 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
                       <Input type="time" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="ativo"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border p-3 sm:col-span-2">
+                    <div className="space-y-0.5">
+                      <FormLabel>Rotina ativa</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Rotinas inativas saem do dashboard e da visão dos funcionários.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )}
               />

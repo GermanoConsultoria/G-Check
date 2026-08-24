@@ -17,6 +17,7 @@ export interface ChecklistRow {
   setor: string;
   turno: string;
   horario: string;
+  ativo: boolean;
 }
 
 export interface ChecklistItemRow {

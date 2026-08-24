@@ -73,7 +73,9 @@ function ChecklistCard({ c }: { c: Checklist }) {
   const p = progresso(c);
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
+    <section
+      className={cn("rounded-2xl border border-border bg-card shadow-sm", !c.ativo && "opacity-70")}
+    >
       <div className="flex items-start gap-2 p-5">
         <button
           onClick={() => setAberto((v) => !v)}
@@ -91,6 +93,14 @@ function ChecklistCard({ c }: { c: Checklist }) {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {!c.ativo && (
+                <Badge
+                  variant="outline"
+                  className="border-transparent bg-muted text-muted-foreground"
+                >
+                  Inativa
+                </Badge>
+              )}
               <EstadoBadge c={c} />
               <ChevronDown
                 className={cn(
@@ -207,7 +217,7 @@ function ChecklistsPage() {
 
   const minhasChecklists = isAdmin
     ? checklists
-    : checklists.filter((c) => c.itens.some((i) => ehResponsavel(i, profile?.nome)));
+    : checklists.filter((c) => c.ativo && c.itens.some((i) => ehResponsavel(i, profile?.nome)));
 
   const lista = minhasChecklists.filter(
     (c) =>

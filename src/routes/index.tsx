@@ -92,9 +92,11 @@ function Dashboard() {
     );
   }
 
+  const ativas = checklists.filter((c) => c.ativo);
+  const inativas = checklists.length - ativas.length;
   const visiveis: Checklist[] = isAdmin
-    ? checklists
-    : checklists
+    ? ativas
+    : ativas
         .map((c) => ({ ...c, itens: c.itens.filter((i) => ehResponsavel(i, profile?.nome)) }))
         .filter((c) => c.itens.length > 0);
 
@@ -143,7 +145,11 @@ function Dashboard() {
           <Metric
             label="Rotinas ativas"
             value={String(visiveis.length)}
-            hint="turnos manhã, tarde e noite"
+            hint={
+              isAdmin && inativas > 0
+                ? `${inativas} rotina${inativas > 1 ? "s" : ""} inativa${inativas > 1 ? "s" : ""}`
+                : "turnos manhã, tarde e noite"
+            }
             icon={ListChecks}
             tone="neutral"
           />
@@ -189,7 +195,9 @@ function Dashboard() {
               {visiveis.length === 0 && (
                 <li className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
                   {isAdmin
-                    ? "Nenhuma rotina cadastrada."
+                    ? inativas > 0
+                      ? "Nenhuma rotina ativa no momento."
+                      : "Nenhuma rotina cadastrada."
                     : "Nenhuma rotina com itens atribuídos a você no momento."}
                 </li>
               )}

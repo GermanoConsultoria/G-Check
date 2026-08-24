@@ -23,6 +23,7 @@ export interface Checklist {
   setor: string;
   turno: string;
   horario: string;
+  ativo: boolean;
   itens: ChecklistItem[];
 }
 
@@ -39,6 +40,7 @@ export interface ChecklistInput {
   setor: string;
   turno: string;
   horario: string;
+  ativo: boolean;
   itens: ItemInput[];
 }
 
@@ -71,6 +73,7 @@ async function fetchChecklists(): Promise<Checklist[]> {
     setor: row.setor,
     turno: row.turno,
     horario: row.horario.slice(0, 5),
+    ativo: row.ativo,
     itens: row.checklist_items.map((it) => ({
       id: it.id,
       titulo: it.titulo,
@@ -205,6 +208,7 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
         setor: input.setor,
         turno: input.turno,
         horario: input.horario,
+        ativo: input.ativo,
       });
       if (checklistError) throw checklistError;
 
@@ -269,6 +273,7 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
           setor: input.setor,
           turno: input.turno,
           horario: input.horario,
+          ativo: input.ativo,
         })
         .eq("id", checklistId);
       if (checklistError) throw checklistError;
