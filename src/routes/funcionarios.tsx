@@ -317,13 +317,13 @@ function FuncionariosPage() {
           <ul className="divide-y divide-border rounded-2xl border border-border bg-card shadow-sm">
             {query.data.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 p-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <User className="size-4.5" />
                   </span>
-                  <div>
-                    <p className="text-sm font-medium">{p.nome}</p>
-                    <p className="text-xs text-muted-foreground">{p.email}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{p.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">{p.email}</p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

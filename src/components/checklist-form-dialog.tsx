@@ -108,7 +108,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
     queryFn: fetchProfiles,
     enabled: open,
   });
-  const nomesFuncionarios = funcionarios.map((f) => f.nome);
+  const nomesFuncionarios = Array.from(new Set(funcionarios.map((f) => f.nome)));
 
   function onOpenChange(next: boolean) {
     setOpen(next);
