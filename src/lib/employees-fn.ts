@@ -1,11 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { getServerEnv } from "./server-env";
 
 /**
  * Ponto crítico de segurança deste arquivo: criar/editar usuários exige a
  * SERVICE ROLE KEY do Supabase (bypassa RLS), que só existe no servidor
- * (process.env, nunca import.meta.env) e nunca é exposta ao client.
+ * (via getServerEnv, nunca import.meta.env) e nunca é exposta ao client.
  *
  * Antes de liberar esse poder, revalidamos a permissão no servidor mesmo que
  * a UI já esconda os botões de quem não é admin — o accessToken do chamador
@@ -17,11 +18,10 @@ import { z } from "zod";
 async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
   const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
   const anonKey = import.meta.env["VITE_SUPABASE_ANON_KEY"] as string | undefined;
-  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  const serviceRoleKey = await getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    // Diagnóstico: aponta exatamente qual variável falta e se process.env está
-    // populado no runtime (Cloudflare Worker). Não expõe nenhum valor secreto.
+    // Diagnóstico: aponta exatamente qual variável falta. Não expõe valores.
     const faltando = [
       !supabaseUrl && "VITE_SUPABASE_URL",
       !anonKey && "VITE_SUPABASE_ANON_KEY",
@@ -29,10 +29,7 @@ async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
     ]
       .filter(Boolean)
       .join(", ");
-    throw new Error(
-      `Configuração do Supabase ausente no servidor: ${faltando}. ` +
-        `process.env: ${Object.keys(process.env).length} chaves.`,
-    );
+    throw new Error(`Configuração do Supabase ausente no servidor: ${faltando}.`);
   }
 
   const supabaseAsCaller = createClient(supabaseUrl, anonKey, {
