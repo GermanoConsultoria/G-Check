@@ -15,19 +15,57 @@ import { getRequest } from "@tanstack/react-start/server";
  * Nunca expõe valores: só devolve a string pedida.
  */
 export async function getServerEnv(key: string): Promise<string | undefined> {
-  // 1) process.env — Node local, ou CF já populando process.env.
-  const fromProcess = typeof process !== "undefined" && process.env ? process.env[key] : undefined;
-  if (fromProcess) return fromProcess;
+  return (await getServerEnvWithDiag(key)).value;
+}
 
-  // 2) Contexto de runtime do request (Cloudflare via srvx / Nitro v3).
+interface ServerEnvDiag {
+  /** Nº de chaves em process.env e se a procurada está lá. */
+  procEnv: string;
+  /** getRequest().runtime.cloudflare.env: alcançável? nº de chaves? tem a chave? */
+  cfReq: string;
+  /** import("cloudflare:workers").env: alcançável? nº de chaves? tem a chave? */
+  cfMod: string;
+}
+
+/**
+ * Igual a getServerEnv, mas também devolve um diagnóstico (só contagens e
+ * presença/ausência da chave — nunca valores) para descobrir onde a variável
+ * deveria estar e não está.
+ */
+export async function getServerEnvWithDiag(
+  key: string,
+): Promise<{ value: string | undefined; diag: ServerEnvDiag }> {
+  const diag: ServerEnvDiag = { procEnv: "n/a", cfReq: "n/a", cfMod: "n/a" };
+  let value: string | undefined;
+
+  // 1) process.env
+  try {
+    const env = typeof process !== "undefined" ? process.env : undefined;
+    if (env) {
+      diag.procEnv = `${Object.keys(env).length} chaves, tem=${Boolean(env[key])}`;
+      if (env[key]) value = env[key];
+    } else {
+      diag.procEnv = "process.env indisponível";
+    }
+  } catch (e) {
+    diag.procEnv = `erro: ${(e as Error).message}`;
+  }
+
+  // 2) Contexto de runtime do request (Cloudflare via srvx / Nitro v3)
   try {
     const req = getRequest() as Request & {
       runtime?: { cloudflare?: { env?: Record<string, unknown> } };
     };
-    const val = req?.runtime?.cloudflare?.env?.[key];
-    if (typeof val === "string" && val) return val;
-  } catch {
-    // getRequest() lança fora de um contexto de request — ignora.
+    const cfEnv = req?.runtime?.cloudflare?.env;
+    if (cfEnv) {
+      diag.cfReq = `${Object.keys(cfEnv).length} chaves, tem=${Boolean(cfEnv[key])}`;
+      const v = cfEnv[key];
+      if (!value && typeof v === "string" && v) value = v;
+    } else {
+      diag.cfReq = `sem runtime.cloudflare.env (runtime=${Boolean(req?.runtime)})`;
+    }
+  } catch (e) {
+    diag.cfReq = `erro: ${(e as Error).message}`;
   }
 
   // 3) Módulo virtual do Cloudflare Workers (externalizado no build da CF).
@@ -38,11 +76,17 @@ export async function getServerEnv(key: string): Promise<string | undefined> {
     const mod = (await import(/* @vite-ignore */ specifier)) as {
       env?: Record<string, unknown>;
     };
-    const val = mod?.env?.[key];
-    if (typeof val === "string" && val) return val;
-  } catch {
-    // Não é runtime Cloudflare — ignora.
+    const cfEnv = mod?.env;
+    if (cfEnv) {
+      diag.cfMod = `${Object.keys(cfEnv).length} chaves, tem=${Boolean(cfEnv[key])}`;
+      const v = cfEnv[key];
+      if (!value && typeof v === "string" && v) value = v;
+    } else {
+      diag.cfMod = "módulo sem .env";
+    }
+  } catch (e) {
+    diag.cfMod = `indisponível: ${(e as Error).message}`;
   }
 
-  return undefined;
+  return { value, diag };
 }

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { getServerEnv } from "./server-env";
+import { getServerEnvWithDiag } from "./server-env";
 
 /**
  * Ponto crítico de segurança deste arquivo: criar/editar usuários exige a
@@ -18,10 +18,11 @@ import { getServerEnv } from "./server-env";
 async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
   const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
   const anonKey = import.meta.env["VITE_SUPABASE_ANON_KEY"] as string | undefined;
-  const serviceRoleKey = await getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const { value: serviceRoleKey, diag } = await getServerEnvWithDiag("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    // Diagnóstico: aponta exatamente qual variável falta. Não expõe valores.
+    // Diagnóstico: aponta qual variável falta e o que cada fonte de env
+    // enxerga (só contagens, nunca valores). Não expõe segredos.
     const faltando = [
       !supabaseUrl && "VITE_SUPABASE_URL",
       !anonKey && "VITE_SUPABASE_ANON_KEY",
@@ -29,7 +30,11 @@ async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
     ]
       .filter(Boolean)
       .join(", ");
-    throw new Error(`Configuração do Supabase ausente no servidor: ${faltando}.`);
+    throw new Error(
+      `Configuração do Supabase ausente no servidor: ${faltando}. ` +
+        `[process.env: ${diag.procEnv}] [request.cf.env: ${diag.cfReq}] ` +
+        `[cloudflare:workers: ${diag.cfMod}]`,
+    );
   }
 
   const supabaseAsCaller = createClient(supabaseUrl, anonKey, {
