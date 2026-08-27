@@ -11,20 +11,20 @@ import {
   estado,
   estadoLabel,
   progresso,
-  useChecksup,
+  useGCheck,
   type Checklist,
-} from "@/lib/checksup-store";
+} from "@/lib/g-check-store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Checksup — Dashboard de rotinas do supermercado" },
+      { title: "G-check — Dashboard de rotinas do supermercado" },
       {
         name: "description",
         content:
           "Visão rápida de pendências, checklists concluídos e taxa de execução das rotinas da sua loja.",
       },
-      { property: "og:title", content: "Checksup — Dashboard de rotinas do supermercado" },
+      { property: "og:title", content: "G-check — Dashboard de rotinas do supermercado" },
       {
         property: "og:description",
         content: "Acompanhe pendências, conclusões e taxa de execução em tempo real.",
@@ -69,7 +69,7 @@ function Metric({
 }
 
 function Dashboard() {
-  const { checklists, isLoading, isError } = useChecksup();
+  const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
 
   const subtitle = isAdmin

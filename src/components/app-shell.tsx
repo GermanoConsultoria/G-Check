@@ -71,7 +71,7 @@ function Brand() {
       </span>
       <span className="leading-tight">
         <span className="block text-base font-semibold tracking-tight text-sidebar-foreground">
-          Checksup
+          G-check
         </span>
         <span className="block text-xs text-muted-foreground">Rotinas de supermercado</span>
       </span>

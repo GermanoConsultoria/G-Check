@@ -33,7 +33,7 @@ import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
 
 export const Route = createFileRoute("/funcionarios")({
   head: () => ({
-    meta: [{ title: "Funcionários — Checksup" }],
+    meta: [{ title: "Funcionários — G-check" }],
   }),
   component: FuncionariosPage,
 });
@@ -300,7 +300,7 @@ function FuncionariosPage() {
   }
 
   return (
-    <AppShell title="Funcionários" subtitle="Contas com acesso ao Checksup">
+    <AppShell title="Funcionários" subtitle="Contas com acesso ao G-check">
       <div className="mx-auto max-w-3xl space-y-5">
         <div className="flex items-center justify-end">
           <NovoFuncionarioDialog />

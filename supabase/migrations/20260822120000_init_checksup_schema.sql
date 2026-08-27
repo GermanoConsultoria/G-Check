@@ -1,5 +1,5 @@
--- Checksup: rotinas operacionais de supermercado
--- Modelo extraído de src/lib/checksup-store.tsx (Checklist / ChecklistItem)
+-- G-check: rotinas operacionais de supermercado
+-- Modelo extraído de src/lib/g-check-store.tsx (Checklist / ChecklistItem)
 
 create extension if not exists pgcrypto;
 
@@ -67,7 +67,7 @@ create policy "anon full access"
   using (true)
   with check (true);
 
--- Seed: mesmos dados de demonstração de demoChecklists em checksup-store.tsx
+-- Seed: mesmos dados de demonstração de demoChecklists em g-check-store.tsx
 insert into checklists (id, nome, setor, turno, horario) values
   ('abertura', 'Abertura da loja', 'Operações', 'Manhã', '07:00'),
   ('reposicao', 'Reposição de gôndolas', 'Comercial', 'Manhã', '08:30'),

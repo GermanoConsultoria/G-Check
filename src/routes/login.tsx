@@ -19,7 +19,7 @@ import { useAuth } from "@/lib/auth-store";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
-    meta: [{ title: "Entrar — Checksup" }],
+    meta: [{ title: "Entrar — G-check" }],
   }),
   component: LoginPage,
 });
@@ -59,7 +59,7 @@ function LoginPage() {
             <Store className="size-5.5" />
           </span>
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Checksup</h1>
+            <h1 className="text-lg font-semibold tracking-tight">G-check</h1>
             <p className="text-sm text-muted-foreground">Entre para acessar as rotinas da loja.</p>
           </div>
         </div>

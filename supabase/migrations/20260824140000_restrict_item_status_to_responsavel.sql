@@ -1,7 +1,7 @@
 -- Funcionário só pode alterar o status de um item se ele for o responsável
 -- por esse item (checagem por nome, já que checklist_items.responsavel é
 -- texto livre — mesmo critério usado no frontend em
--- src/lib/checksup-store.tsx, função ehResponsavel).
+-- src/lib/g-check-store.tsx, função ehResponsavel).
 -- Admin continua podendo alterar qualquer item, como antes.
 
 create or replace function public.checklist_items_restrict_funcionario_update()

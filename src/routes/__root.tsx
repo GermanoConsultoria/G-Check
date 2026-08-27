@@ -13,7 +13,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { ChecksupProvider } from "../lib/checksup-store";
+import { GCheckProvider } from "../lib/g-check-store";
 import { AuthProvider, useAuth } from "../lib/auth-store";
 import { Toaster } from "../components/ui/sonner";
 
@@ -82,7 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Checksup — Rotinas de supermercado" },
+      { title: "G-check — Rotinas de supermercado" },
       {
         name: "description",
         content:
@@ -168,17 +168,17 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Ordem importa: ChecksupProvider chama useAuth() (precisa estar dentro de
+      {/* Ordem importa: GCheckProvider chama useAuth() (precisa estar dentro de
           AuthProvider) e sua query só habilita com sessão presente — mas ele fica
           fora do AuthGate para já ter os dados prontos assim que o gate libera. */}
       <AuthProvider>
-        <ChecksupProvider>
+        <GCheckProvider>
           <AuthGate>
             {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
             <Outlet />
           </AuthGate>
           <Toaster />
-        </ChecksupProvider>
+        </GCheckProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

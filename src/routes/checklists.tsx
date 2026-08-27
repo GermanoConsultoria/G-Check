@@ -22,22 +22,22 @@ import {
   estadoLabel,
   progresso,
   turnos,
-  useChecksup,
+  useGCheck,
   type Checklist,
   type ChecklistEstado,
   type Turno,
-} from "@/lib/checksup-store";
+} from "@/lib/g-check-store";
 
 export const Route = createFileRoute("/checklists")({
   head: () => ({
     meta: [
-      { title: "Checklists de rotina — Checksup" },
+      { title: "Checklists de rotina — G-check" },
       {
         name: "description",
         content:
           "Abra e conclua rotinas de supermercado: abertura, reposição de gôndolas, validade, limpeza e fechamento.",
       },
-      { property: "og:title", content: "Checklists de rotina — Checksup" },
+      { property: "og:title", content: "Checklists de rotina — G-check" },
       {
         property: "og:description",
         content: "Acompanhe item por item as rotinas operacionais da sua loja.",
@@ -183,7 +183,7 @@ function EstadoBadge({ c }: { c: Checklist }) {
 }
 
 function ChecklistCard({ c }: { c: Checklist }) {
-  const { toggleItem, concluirTodos, reabrir } = useChecksup();
+  const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
   const [aberto, setAberto] = React.useState(false);
   const p = progresso(c);
@@ -245,7 +245,7 @@ function ChecklistCard({ c }: { c: Checklist }) {
             {c.itens.map((i) => {
               const feito = i.status === "concluido";
               // Admin marca qualquer item; funcionário só o que está atribuído a
-              // ele (comparação por nome, ver ehResponsavel em checksup-store.tsx).
+              // ele (comparação por nome, ver ehResponsavel em g-check-store.tsx).
               // Reforçado no banco pela migration
               // 20260824140000_restrict_item_status_to_responsavel.sql.
               const podeMarcar = isAdmin || ehResponsavel(i, profile?.nome);
@@ -313,7 +313,7 @@ function ChecklistCard({ c }: { c: Checklist }) {
 }
 
 function ChecklistsPage() {
-  const { checklists, isLoading, isError } = useChecksup();
+  const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
   const [estadosSelecionados, setEstadosSelecionados] = React.useState<ChecklistEstado[]>([]);
   const [turnosSelecionados, setTurnosSelecionados] = React.useState<Turno[]>([]);

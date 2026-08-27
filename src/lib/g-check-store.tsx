@@ -101,9 +101,9 @@ interface Ctx {
   editarChecklist: (checklistId: string, input: ChecklistInput) => void;
 }
 
-const ChecksupContext = React.createContext<Ctx | null>(null);
+const GCheckContext = React.createContext<Ctx | null>(null);
 
-export function ChecksupProvider({ children }: { children: React.ReactNode }) {
+export function GCheckProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   // "enabled: !!session" evita chamar o Supabase (e estourar RLS) antes do login terminar.
@@ -346,12 +346,12 @@ export function ChecksupProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
-  return <ChecksupContext.Provider value={value}>{children}</ChecksupContext.Provider>;
+  return <GCheckContext.Provider value={value}>{children}</GCheckContext.Provider>;
 }
 
-export function useChecksup() {
-  const ctx = React.useContext(ChecksupContext);
-  if (!ctx) throw new Error("useChecksup deve ser usado dentro de ChecksupProvider");
+export function useGCheck() {
+  const ctx = React.useContext(GCheckContext);
+  if (!ctx) throw new Error("useGCheck deve ser usado dentro de GCheckProvider");
   return ctx;
 }
 

@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { turnos, useChecksup, type Checklist } from "@/lib/checksup-store";
+import { turnos, useGCheck, type Checklist } from "@/lib/g-check-store";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
 
 const itemSchema = z.object({
@@ -89,7 +89,7 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
 }
 
 function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
-  const { criarChecklist, editarChecklist } = useChecksup();
+  const { criarChecklist, editarChecklist } = useGCheck();
   const [open, setOpen] = React.useState(false);
   const editando = !!checklist;
 
@@ -119,7 +119,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
     // "itemId" só existe em itens que vieram de uma checklist existente
     // (setado em valoresPadrao); itens adicionados no formulário não têm.
     // O store (editarChecklist) usa essa presença/ausência para decidir se
-    // preserva o status do item ou o cria do zero — ver checksup-store.tsx.
+    // preserva o status do item ou o cria do zero — ver g-check-store.tsx.
     const itens = values.itens.map((i) => {
       const detalhe = i.detalhe?.trim();
       return {
