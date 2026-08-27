@@ -39,7 +39,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function UserFooter() {
-  const { profile, signOut } = useAuth();
+  const { signOut } = useAuth();
 
   async function handleSignOut() {
     await signOut();
@@ -47,20 +47,23 @@ function UserFooter() {
   }
 
   return (
-    <div className="mt-auto flex items-center gap-2 rounded-xl bg-sidebar-accent p-3 text-xs text-muted-foreground">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-sidebar-foreground">{profile?.nome ?? "—"}</p>
-        <p className="truncate">{profile?.role === "admin" ? "Administrador" : "Funcionário"}</p>
-      </div>
-      <button
-        onClick={handleSignOut}
-        aria-label="Sair"
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar hover:text-sidebar-foreground"
-      >
-        <LogOut className="size-4" />
-      </button>
-    </div>
+    <button
+      onClick={handleSignOut}
+      className="mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-destructive/12 hover:text-destructive"
+    >
+      <LogOut className="size-4.5" />
+      Sair
+    </button>
   );
+}
+
+function iniciais(nome?: string | null) {
+  const partes = (nome ?? "").trim().split(/\s+/).filter(Boolean);
+  const primeira = partes[0] ?? "";
+  const ultima = partes[partes.length - 1] ?? "";
+  if (!primeira) return "?";
+  if (partes.length === 1) return primeira.slice(0, 2).toUpperCase();
+  return (primeira[0]! + ultima[0]!).toUpperCase();
 }
 
 function Brand() {
@@ -89,10 +92,11 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
+  const { profile } = useAuth();
 
   return (
     <div className="min-h-screen bg-background lg:flex">
-      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col lg:gap-6 lg:p-4">
+      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:gap-6 lg:overflow-y-auto lg:p-4">
         <Brand />
         <NavLinks />
         <UserFooter />
@@ -119,14 +123,20 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card/95 px-4 py-4 backdrop-blur md:px-8">
+        <header className="sticky top-0 z-30 flex items-center gap-2.5 border-b border-border bg-card/95 px-4 py-2.5 backdrop-blur md:px-6">
           <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu">
-            <Menu className="size-5" />
+            <Menu className="size-4.5" />
           </button>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight md:text-xl">{title}</h1>
-            {subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}
+            <h1 className="truncate text-base font-semibold tracking-tight md:text-lg">{title}</h1>
+            {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
           </div>
+          <span
+            title={profile?.nome ?? undefined}
+            className="ml-auto flex size-8 shrink-0 select-none items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow"
+          >
+            {iniciais(profile?.nome)}
+          </span>
         </header>
         <main className={cn("flex-1 px-4 py-6 md:px-8 md:py-8")}>{children}</main>
       </div>
