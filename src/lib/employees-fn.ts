@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { getServerEnvWithDiag } from "./server-env";
+import { getServerEnv } from "./server-env";
 
 /**
  * Ponto crítico de segurança deste arquivo: criar/editar usuários exige a
@@ -15,14 +15,15 @@ import { getServerEnvWithDiag } from "./server-env";
  * verdade (auth.getUser) e 2) checar o role dele na tabela profiles. Só então
  * o client com a service role key é devolvido.
  */
-async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
+async function getAdminClient(
+  accessToken: string,
+): Promise<{ supabaseAdmin: SupabaseClient; callerId: string }> {
   const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
   const anonKey = import.meta.env["VITE_SUPABASE_ANON_KEY"] as string | undefined;
-  const { value: serviceRoleKey, diag } = await getServerEnvWithDiag("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceRoleKey = await getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    // Diagnóstico: aponta qual variável falta e o que cada fonte de env
-    // enxerga (só contagens, nunca valores). Não expõe segredos.
+    // Aponta qual variável falta (nomes só, nunca valores).
     const faltando = [
       !supabaseUrl && "VITE_SUPABASE_URL",
       !anonKey && "VITE_SUPABASE_ANON_KEY",
@@ -30,11 +31,7 @@ async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
     ]
       .filter(Boolean)
       .join(", ");
-    throw new Error(
-      `Configuração do Supabase ausente no servidor: ${faltando}. ` +
-        `[process.env: ${diag.procEnv}] [request.cf.env: ${diag.cfReq}] ` +
-        `[cloudflare:workers: ${diag.cfMod}]`,
-    );
+    throw new Error(`Configuração do Supabase ausente no servidor: ${faltando}.`);
   }
 
   const supabaseAsCaller = createClient(supabaseUrl, anonKey, {
@@ -57,9 +54,11 @@ async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
     throw new Error("Apenas administradores podem gerenciar funcionários.");
   }
 
-  return createClient(supabaseUrl, serviceRoleKey, {
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  return { supabaseAdmin, callerId: userData.user.id };
 }
 
 const criarInputSchema = z.object({
@@ -73,7 +72,7 @@ const criarInputSchema = z.object({
 export const criarFuncionario = createServerFn({ method: "POST" })
   .validator((data: unknown) => criarInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const supabaseAdmin = await getAdminClient(data.accessToken);
+    const { supabaseAdmin } = await getAdminClient(data.accessToken);
 
     const { data: novoUsuario, error: criarError } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
@@ -100,7 +99,7 @@ const editarInputSchema = z.object({
 export const editarFuncionario = createServerFn({ method: "POST" })
   .validator((data: unknown) => editarInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const supabaseAdmin = await getAdminClient(data.accessToken);
+    const { supabaseAdmin } = await getAdminClient(data.accessToken);
 
     const authUpdate: {
       email: string;
@@ -130,4 +129,29 @@ export const editarFuncionario = createServerFn({ method: "POST" })
     }
 
     return { id: data.userId, nome: data.nome, email: data.email };
+  });
+
+const excluirInputSchema = z.object({
+  accessToken: z.string().min(1),
+  userId: z.string().min(1),
+});
+
+export const excluirFuncionario = createServerFn({ method: "POST" })
+  .validator((data: unknown) => excluirInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin, callerId } = await getAdminClient(data.accessToken);
+
+    // Um admin não pode excluir a própria conta por este caminho.
+    if (data.userId === callerId) {
+      throw new Error("Você não pode excluir a sua própria conta.");
+    }
+
+    // profiles.id referencia auth.users(id) ON DELETE CASCADE, então remover o
+    // usuário do Auth já apaga o perfil correspondente.
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
+    if (error) {
+      throw new Error(error.message || "Não foi possível excluir o funcionário.");
+    }
+
+    return { id: data.userId };
   });

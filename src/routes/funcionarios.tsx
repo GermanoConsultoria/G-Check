@@ -5,9 +5,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Pencil, Plus, ShieldCheck, User } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Trash2, User } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +39,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useAuth, type Profile } from "@/lib/auth-store";
-import { criarFuncionario, editarFuncionario } from "@/lib/employees-fn";
+import { criarFuncionario, editarFuncionario, excluirFuncionario } from "@/lib/employees-fn";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
 
 export const Route = createFileRoute("/funcionarios")({
@@ -279,8 +290,59 @@ function EditarFuncionarioDialog({ profile }: { profile: Profile }) {
   );
 }
 
+function ExcluirFuncionarioButton({ profile }: { profile: Profile }) {
+  const { session } = useAuth();
+  const queryClient = useQueryClient();
+
+  async function onConfirm() {
+    if (!session) return;
+    try {
+      await excluirFuncionario({
+        data: { accessToken: session.access_token, userId: profile.id },
+      });
+      toast.success("Funcionário excluído.");
+      queryClient.invalidateQueries({ queryKey: PROFILES_QUERY_KEY });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível excluir.");
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={`Excluir ${profile.nome}`}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir “{profile.nome}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            A conta de {profile.email} e o acesso ao G-check serão removidos. Não dá para desfazer.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function FuncionariosPage() {
-  const { isAdmin, isLoading: authLoading } = useAuth();
+  const { isAdmin, isLoading: authLoading, session } = useAuth();
   const query = useQuery({
     queryKey: PROFILES_QUERY_KEY,
     queryFn: fetchProfiles,
@@ -339,6 +401,7 @@ function FuncionariosPage() {
                     {p.role === "admin" ? "Administrador" : "Funcionário"}
                   </Badge>
                   <EditarFuncionarioDialog profile={p} />
+                  {p.id !== session?.user.id && <ExcluirFuncionarioButton profile={p} />}
                 </div>
               </li>
             ))}
