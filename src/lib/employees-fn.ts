@@ -20,7 +20,19 @@ async function getAdminClient(accessToken: string): Promise<SupabaseClient> {
   const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    throw new Error("Configuração do Supabase ausente no servidor (SUPABASE_SERVICE_ROLE_KEY).");
+    // Diagnóstico: aponta exatamente qual variável falta e se process.env está
+    // populado no runtime (Cloudflare Worker). Não expõe nenhum valor secreto.
+    const faltando = [
+      !supabaseUrl && "VITE_SUPABASE_URL",
+      !anonKey && "VITE_SUPABASE_ANON_KEY",
+      !serviceRoleKey && "SUPABASE_SERVICE_ROLE_KEY",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(
+      `Configuração do Supabase ausente no servidor: ${faltando}. ` +
+        `process.env: ${Object.keys(process.env).length} chaves.`,
+    );
   }
 
   const supabaseAsCaller = createClient(supabaseUrl, anonKey, {
