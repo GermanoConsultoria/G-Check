@@ -1,8 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
-import { Check, ChevronDown, Clock, Filter, RotateCcw, User, X } from "lucide-react";
+import { Check, ChevronDown, Clock, Filter, RotateCcw, Trash2, User, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { EditarChecklistDialog, NovaChecklistDialog } from "@/components/checklist-form-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -182,6 +193,44 @@ function EstadoBadge({ c }: { c: Checklist }) {
   );
 }
 
+function ExcluirChecklistButton({ c }: { c: Checklist }) {
+  const { excluirChecklist } = useGCheck();
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={`Excluir ${c.nome}`}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir “{c.nome}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            A checklist e seus {c.itens.length}{" "}
+            {c.itens.length === 1 ? "item" : "itens"} serão removidos. Não dá para desfazer.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => excluirChecklist(c.id)}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function ChecklistCard({ c }: { c: Checklist }) {
   const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
@@ -236,7 +285,12 @@ function ChecklistCard({ c }: { c: Checklist }) {
             <Progress value={p.pct} className="h-1.5" />
           </div>
         </button>
-        {isAdmin && <EditarChecklistDialog checklist={c} />}
+        {isAdmin && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <EditarChecklistDialog checklist={c} />
+            <ExcluirChecklistButton c={c} />
+          </div>
+        )}
       </div>
 
       {aberto && (

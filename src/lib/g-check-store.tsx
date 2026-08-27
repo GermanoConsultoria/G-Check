@@ -99,6 +99,7 @@ interface Ctx {
   reabrir: (checklistId: string) => void;
   criarChecklist: (input: ChecklistInput) => void;
   editarChecklist: (checklistId: string, input: ChecklistInput) => void;
+  excluirChecklist: (checklistId: string) => void;
 }
 
 const GCheckContext = React.createContext<Ctx | null>(null);
@@ -323,6 +324,31 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
     [editarChecklistMutation],
   );
 
+  const excluirChecklistMutation = useMutation({
+    mutationFn: async (checklistId: string) => {
+      // checklist_items tem "on delete cascade" no checklist_id, então apagar a
+      // checklist remove os itens junto — não precisa deletar itens à mão.
+      const { error } = await supabase.from("checklists").delete().eq("id", checklistId);
+      if (error) throw error;
+    },
+    onSuccess: () => toast.success("Checklist excluída."),
+    onError: () => {
+      toast.error("Não foi possível excluir a checklist.");
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const excluirChecklist = React.useCallback(
+    (checklistId: string) => {
+      // Remoção otimista: tira a checklist do cache antes da resposta do servidor.
+      queryClient.setQueryData<Checklist[]>(QUERY_KEY, (prev) =>
+        (prev ?? []).filter((c) => c.id !== checklistId),
+      );
+      excluirChecklistMutation.mutate(checklistId);
+    },
+    [queryClient, excluirChecklistMutation],
+  );
+
   const value = React.useMemo(
     () => ({
       checklists: query.data ?? [],
@@ -333,6 +359,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
       reabrir,
       criarChecklist,
       editarChecklist,
+      excluirChecklist,
     }),
     [
       query.data,
@@ -343,6 +370,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
       reabrir,
       criarChecklist,
       editarChecklist,
+      excluirChecklist,
     ],
   );
 
