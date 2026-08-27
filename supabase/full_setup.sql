@@ -56,6 +56,16 @@ create index if not exists checklist_items_checklist_id_idx
 create index if not exists checklist_items_checklist_id_posicao_idx
   on checklist_items (checklist_id, posicao);
 
+-- Cadastro próprio de setores (migration 20260827120000). Referência usada ao
+-- criar/editar checklists; a coluna checklists.setor continua sendo texto livre.
+create table if not exists setores (
+  id text primary key,
+  nome text not null unique,
+  descricao text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   nome text not null,
@@ -89,6 +99,11 @@ create trigger checklist_items_set_updated_at
 drop trigger if exists profiles_set_updated_at on profiles;
 create trigger profiles_set_updated_at
   before update on profiles
+  for each row execute function set_updated_at();
+
+drop trigger if exists setores_set_updated_at on setores;
+create trigger setores_set_updated_at
+  before update on setores
   for each row execute function set_updated_at();
 
 -- Cria o profile automaticamente quando um usuário nasce no Auth
@@ -181,6 +196,7 @@ create trigger checklist_items_restrict_funcionario_update
 alter table checklists enable row level security;
 alter table checklist_items enable row level security;
 alter table profiles enable row level security;
+alter table setores enable row level security;
 
 -- Limpa qualquer política anterior (inclui o "anon full access" da 1ª migration,
 -- que liberava acesso sem login).
@@ -197,6 +213,10 @@ drop policy if exists "admin remove itens" on checklist_items;
 drop policy if exists "ver o proprio perfil" on profiles;
 drop policy if exists "admin ve todos os perfis" on profiles;
 drop policy if exists "admin atualiza perfis" on profiles;
+drop policy if exists "autenticados veem setores" on setores;
+drop policy if exists "admin cria setores" on setores;
+drop policy if exists "admin atualiza setores" on setores;
+drop policy if exists "admin remove setores" on setores;
 
 -- checklists: todo autenticado lê; só admin escreve.
 create policy "autenticados veem checklists"
@@ -260,6 +280,28 @@ create policy "admin atualiza perfis"
   using (is_admin())
   with check (is_admin());
 
+-- setores: todo autenticado lê; só admin escreve.
+create policy "autenticados veem setores"
+  on setores for select
+  to authenticated
+  using (true);
+
+create policy "admin cria setores"
+  on setores for insert
+  to authenticated
+  with check (is_admin());
+
+create policy "admin atualiza setores"
+  on setores for update
+  to authenticated
+  using (is_admin())
+  with check (is_admin());
+
+create policy "admin remove setores"
+  on setores for delete
+  to authenticated
+  using (is_admin());
+
 
 -- ============================================================================
 -- 4. DADOS
@@ -269,6 +311,13 @@ create policy "admin atualiza perfis"
 --          pelas queries do APÊNDICE (rodadas no projeto ANTIGO).
 -- Os dois usam "on conflict do nothing", então rodar de novo não duplica nada.
 -- ============================================================================
+
+insert into setores (id, nome) values
+  ('operacoes', 'Operações'),
+  ('comercial', 'Comercial'),
+  ('qualidade', 'Qualidade'),
+  ('facilities', 'Facilities')
+on conflict (id) do nothing;
 
 insert into checklists (id, nome, setor, turno, horario) values
   ('abertura', 'Abertura da loja', 'Operações', 'Manhã', '07:00'),

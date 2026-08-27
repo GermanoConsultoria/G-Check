@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChecklistsRouteImport } from './routes/checklists'
 import { Route as FuncionariosRouteImport } from './routes/funcionarios'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetoresRouteImport } from './routes/setores'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetoresRoute = SetoresRouteImport.update({
+  id: '/setores',
+  path: '/setores',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
   '/login': typeof LoginRoute
+  '/setores': typeof SetoresRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
   '/login': typeof LoginRoute
+  '/setores': typeof SetoresRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
   '/login': typeof LoginRoute
+  '/setores': typeof SetoresRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/checklists' | '/funcionarios' | '/login'
+  fullPaths: '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/checklists' | '/funcionarios' | '/login'
-  id: '__root__' | '/' | '/checklists' | '/funcionarios' | '/login'
+  to: '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
+  id: '__root__' | '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +76,7 @@ export interface RootRouteChildren {
   ChecklistsRoute: typeof ChecklistsRoute
   FuncionariosRoute: typeof FuncionariosRoute
   LoginRoute: typeof LoginRoute
+  SetoresRoute: typeof SetoresRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setores': {
+      id: '/setores'
+      path: '/setores'
+      fullPath: '/setores'
+      preLoaderRoute: typeof SetoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChecklistsRoute: ChecklistsRoute,
   FuncionariosRoute: FuncionariosRoute,
   LoginRoute: LoginRoute,
+  SetoresRoute: SetoresRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

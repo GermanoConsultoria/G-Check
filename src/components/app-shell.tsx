@@ -1,39 +1,72 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { LayoutDashboard, ListChecks, LogOut, Menu, Store, Users, X } from "lucide-react";
+import {
+  Building2,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  Menu,
+  Store,
+  Users,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
 
-const navBase = [
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  exact: boolean;
+};
+
+const navBase: readonly NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/checklists", label: "Checklists", icon: ListChecks, exact: false },
-] as const;
+];
 
-const navAdmin = [
+// Seção só de admin. As rotas também se autoprotegem (ver funcionarios.tsx /
+// setores.tsx), então esconder aqui é só para não oferecer um link que levaria
+// a uma tela de acesso negado.
+const navCadastros: readonly NavItem[] = [
   { to: "/funcionarios", label: "Funcionários", icon: Users, exact: false },
-] as const;
+  { to: "/setores", label: "Setores", icon: Building2, exact: false },
+];
+
+function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: (() => void) | undefined }) {
+  const { to, label, icon: Icon, exact } = item;
+  return (
+    <Link
+      to={to}
+      onClick={onNavigate}
+      activeOptions={{ exact }}
+      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-primary/12 hover:text-primary data-[status=active]:bg-primary/12 data-[status=active]:font-semibold data-[status=active]:text-primary"
+    >
+      <Icon className="size-4.5" />
+      {label}
+    </Link>
+  );
+}
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { isAdmin } = useAuth();
-  // Item "Funcionários" só aparece pra admin — a rota /funcionarios também se
-  // autoprotege (ver FuncionariosPage em funcionarios.tsx), então isto aqui é
-  // só para não oferecer um link que levaria a uma tela de acesso negado.
-  const nav = isAdmin ? [...navBase, ...navAdmin] : navBase;
 
   return (
     <nav className="flex flex-col gap-1">
-      {nav.map(({ to, label, icon: Icon, exact }) => (
-        <Link
-          key={to}
-          to={to}
-          onClick={onNavigate}
-          activeOptions={{ exact }}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-primary/12 hover:text-primary data-[status=active]:bg-primary/12 data-[status=active]:font-semibold data-[status=active]:text-primary"
-        >
-          <Icon className="size-4.5" />
-          {label}
-        </Link>
+      {navBase.map((item) => (
+        <NavLink key={item.to} item={item} onNavigate={onNavigate} />
       ))}
+
+      {isAdmin && (
+        <>
+          <p className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+            Rotina de cadastros
+          </p>
+          {navCadastros.map((item) => (
+            <NavLink key={item.to} item={item} onNavigate={onNavigate} />
+          ))}
+        </>
+      )}
     </nav>
   );
 }

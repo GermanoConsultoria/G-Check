@@ -29,3 +29,9 @@ export interface ChecklistItemRow {
   status: string;
   posicao: number;
 }
+
+export interface SetorRow {
+  id: string;
+  nome: string;
+  descricao: string | null;
+}
