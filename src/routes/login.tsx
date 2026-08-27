@@ -55,7 +55,7 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
             <Store className="size-5.5" />
           </span>
           <div>

@@ -28,7 +28,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           to={to}
           onClick={onNavigate}
           activeOptions={{ exact }}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground data-[status=active]:bg-sidebar-primary data-[status=active]:text-sidebar-primary-foreground"
+          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-primary/12 hover:text-primary data-[status=active]:bg-primary/12 data-[status=active]:font-semibold data-[status=active]:text-primary"
         >
           <Icon className="size-4.5" />
           {label}
@@ -66,7 +66,7 @@ function UserFooter() {
 function Brand() {
   return (
     <div className="flex items-center gap-2.5 px-1">
-      <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+      <span className="flex size-9 items-center justify-center rounded-xl bg-primary/12 text-primary">
         <Store className="size-5" />
       </span>
       <span className="leading-tight">
@@ -119,7 +119,7 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/85 px-4 py-4 backdrop-blur md:px-8">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card/95 px-4 py-4 backdrop-blur md:px-8">
           <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu">
             <Menu className="size-5" />
           </button>
