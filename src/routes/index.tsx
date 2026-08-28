@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertCircle, CheckCircle2, Clock, ListChecks, TrendingUp } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle2,
+  Clock,
+  ListChecks,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import type { ChecklistSearch } from "@/routes/checklists";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +20,10 @@ import {
   estado,
   estadoLabel,
   progresso,
+  tarefasPorFuncionario,
+  tarefasPorSetor,
   useGCheck,
+  type AgregadoTarefas,
   type Checklist,
 } from "@/lib/g-check-store";
 
@@ -40,15 +52,19 @@ function Metric({
   hint,
   icon: Icon,
   tone,
+  search,
 }: {
   label: string;
   value: string;
   hint: string;
   icon: typeof Clock;
   tone: "primary" | "warn" | "neutral";
+  /** Se informado, o card vira um link para /checklists já com esse filtro. */
+  search?: ChecklistSearch | undefined;
 }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+  const base = "rounded-2xl border border-border bg-card p-5 shadow-sm";
+  const conteudo = (
+    <>
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{label}</p>
         <span
@@ -64,7 +80,91 @@ function Metric({
       </div>
       <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
-    </div>
+    </>
+  );
+
+  if (search) {
+    return (
+      <Link
+        to="/checklists"
+        search={search}
+        className={cn(base, "block transition-colors hover:border-primary/40 hover:bg-primary/5")}
+      >
+        {conteudo}
+      </Link>
+    );
+  }
+
+  return <div className={base}>{conteudo}</div>;
+}
+
+/**
+ * Tabela-gráfico: uma linha por funcionário/setor com barra empilhada
+ * (concluídos + pendentes) normalizada pelo maior volume da lista, para o
+ * comprimento também comunicar carga de trabalho. Ordenada por pendências.
+ */
+function TarefasBreakdown({
+  titulo,
+  descricao,
+  icon: Icon,
+  dados,
+  vazio,
+  rotuloItem,
+}: {
+  titulo: string;
+  descricao: string;
+  icon: typeof Users;
+  dados: AgregadoTarefas[];
+  vazio: string;
+  /** singular do que cada tarefa representa, p/ concordância ("tarefa"/"tarefas"). */
+  rotuloItem: string;
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <Icon className="size-4" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">{titulo}</h2>
+          <p className="text-xs text-muted-foreground">{descricao}</p>
+        </div>
+      </div>
+      <ul className="mt-4 space-y-3">
+        {dados.map((d) => (
+          <li key={d.chave} className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="truncate font-medium">{d.chave}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {d.pendentes > 0 ? (
+                  <span className="font-medium text-chart-4">
+                    {d.pendentes} pendente{d.pendentes > 1 ? "s" : ""}
+                  </span>
+                ) : (
+                  <span className="font-medium text-primary">em dia</span>
+                )}{" "}
+                · {d.total} {d.total === 1 ? rotuloItem : `${rotuloItem}s`}
+              </span>
+            </div>
+            {/* Barra 100% preenchida: cada linha se divide entre concluídas e
+                pendentes pela SUA própria contagem, sem comparar com as outras. */}
+            <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="bg-primary"
+                style={{ width: `${d.total ? (d.feitos / d.total) * 100 : 0}%` }}
+              />
+              <div
+                className="bg-chart-4"
+                style={{ width: `${d.total ? (d.pendentes / d.total) * 100 : 0}%` }}
+              />
+            </div>
+          </li>
+        ))}
+        {dados.length === 0 && (
+          <li className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">{vazio}</li>
+        )}
+      </ul>
+    </section>
   );
 }
 
@@ -120,6 +220,11 @@ function Dashboard() {
     .flatMap((c) => c.itens.filter((i) => i.status === "pendente").map((i) => ({ c, i })))
     .slice(0, 6);
 
+  // Distribuição das tarefas (itens) por responsável e por setor — só faz
+  // sentido para o admin, que enxerga todas as checklists ativas.
+  const porFuncionario = isAdmin ? tarefasPorFuncionario(checklists) : [];
+  const porSetor = isAdmin ? tarefasPorSetor(checklists) : [];
+
   return (
     <AppShell title="Dashboard" subtitle={subtitle}>
       <div className="mx-auto max-w-5xl space-y-6">
@@ -130,6 +235,7 @@ function Dashboard() {
             hint="itens aguardando execução"
             icon={AlertCircle}
             tone="warn"
+            search={{ estados: ["pendente", "em_andamento"] }}
           />
           <Metric
             label="Checklists concluídos"
@@ -137,6 +243,7 @@ function Dashboard() {
             hint="rotinas finalizadas hoje"
             icon={CheckCircle2}
             tone="primary"
+            search={{ estados: ["concluido"] }}
           />
           <Metric
             label="Taxa de execução"
@@ -214,11 +321,17 @@ function Dashboard() {
             </p>
             <ul className="mt-4 space-y-3">
               {pendencias.map(({ c, i }) => (
-                <li key={i.id} className="rounded-xl bg-muted/60 p-3">
-                  <p className="text-sm font-medium">{i.titulo}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {c.nome} · {i.responsavel}
-                  </p>
+                <li key={i.id}>
+                  <Link
+                    to="/checklists"
+                    search={{ checklist: c.id }}
+                    className="block rounded-xl bg-muted/60 p-3 transition-colors hover:bg-muted"
+                  >
+                    <p className="text-sm font-medium">{i.titulo}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {c.nome} · {i.responsavel}
+                    </p>
+                  </Link>
                 </li>
               ))}
               {pendencias.length === 0 && visiveis.length > 0 && (
@@ -229,6 +342,27 @@ function Dashboard() {
             </ul>
           </section>
         </div>
+
+        {isAdmin && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <TarefasBreakdown
+              titulo="Tarefas por funcionário"
+              descricao="Itens de rotina atribuídos a cada pessoa"
+              icon={Users}
+              dados={porFuncionario}
+              rotuloItem="tarefa"
+              vazio="Nenhuma tarefa atribuída nas rotinas ativas."
+            />
+            <TarefasBreakdown
+              titulo="Tarefas por setor"
+              descricao="Itens de rotina agrupados pela área da loja"
+              icon={Building2}
+              dados={porSetor}
+              rotuloItem="tarefa"
+              vazio="Nenhuma rotina ativa com tarefas."
+            />
+          </div>
+        )}
       </div>
     </AppShell>
   );

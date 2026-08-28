@@ -36,9 +36,12 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
+import { resumoDe, tarefasPorSetor, useGCheck } from "@/lib/g-check-store";
 import {
   criarSetor,
   editarSetor,
@@ -290,6 +293,8 @@ function ExcluirSetorButton({ setor }: { setor: Setor }) {
 
 function SetoresPage() {
   const { isAdmin, isLoading: authLoading } = useAuth();
+  const { checklists } = useGCheck();
+  const porSetor = React.useMemo(() => tarefasPorSetor(checklists), [checklists]);
   const query = useQuery({
     queryKey: SETORES_QUERY_KEY,
     queryFn: fetchSetores,
@@ -322,7 +327,9 @@ function SetoresPage() {
 
         {query.data && (
           <ul className="divide-y divide-border rounded-2xl border border-border bg-card shadow-sm">
-            {query.data.map((s) => (
+            {query.data.map((s) => {
+              const resumo = resumoDe(porSetor, s.nome);
+              return (
               <li key={s.id} className="flex items-center justify-between gap-3 p-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -336,11 +343,28 @@ function SetoresPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {resumo.total > 0 && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "border-transparent",
+                        resumo.pendentes > 0
+                          ? "bg-chart-4/20 text-chart-4"
+                          : "bg-primary/12 text-primary",
+                      )}
+                      title={`${resumo.feitos} de ${resumo.total} tarefas concluídas`}
+                    >
+                      {resumo.pendentes > 0
+                        ? `${resumo.pendentes} pendente${resumo.pendentes > 1 ? "s" : ""}`
+                        : "em dia"}
+                    </Badge>
+                  )}
                   <EditarSetorDialog setor={s} />
                   <ExcluirSetorButton setor={s} />
                 </div>
               </li>
-            ))}
+              );
+            })}
             {query.data.length === 0 && (
               <li className="p-8 text-center text-sm text-muted-foreground">
                 Nenhum setor cadastrado ainda.

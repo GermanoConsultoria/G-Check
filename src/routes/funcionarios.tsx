@@ -38,9 +38,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { useAuth, type Profile } from "@/lib/auth-store";
 import { criarFuncionario, editarFuncionario, excluirFuncionario } from "@/lib/employees-fn";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
+import { resumoDe, tarefasPorFuncionario, useGCheck } from "@/lib/g-check-store";
 
 export const Route = createFileRoute("/funcionarios")({
   head: () => ({
@@ -343,6 +345,11 @@ function ExcluirFuncionarioButton({ profile }: { profile: Profile }) {
 
 function FuncionariosPage() {
   const { isAdmin, isLoading: authLoading, session } = useAuth();
+  const { checklists } = useGCheck();
+  const porFuncionario = React.useMemo(
+    () => tarefasPorFuncionario(checklists),
+    [checklists],
+  );
   const query = useQuery({
     queryKey: PROFILES_QUERY_KEY,
     queryFn: fetchProfiles,
@@ -377,7 +384,9 @@ function FuncionariosPage() {
 
         {query.data && (
           <ul className="divide-y divide-border rounded-2xl border border-border bg-card shadow-sm">
-            {query.data.map((p) => (
+            {query.data.map((p) => {
+              const resumo = resumoDe(porFuncionario, p.nome);
+              return (
               <li key={p.id} className="flex items-center justify-between gap-3 p-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -389,6 +398,22 @@ function FuncionariosPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {resumo.total > 0 && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "border-transparent",
+                        resumo.pendentes > 0
+                          ? "bg-chart-4/20 text-chart-4"
+                          : "bg-primary/12 text-primary",
+                      )}
+                      title={`${resumo.feitos} de ${resumo.total} tarefas concluídas`}
+                    >
+                      {resumo.pendentes > 0
+                        ? `${resumo.pendentes} pendente${resumo.pendentes > 1 ? "s" : ""}`
+                        : "em dia"}
+                    </Badge>
+                  )}
                   <Badge
                     variant="outline"
                     className={
@@ -404,7 +429,8 @@ function FuncionariosPage() {
                   {p.id !== session?.user.id && <ExcluirFuncionarioButton profile={p} />}
                 </div>
               </li>
-            ))}
+              );
+            })}
             {query.data.length === 0 && (
               <li className="p-8 text-center text-sm text-muted-foreground">
                 Nenhum funcionário cadastrado ainda.

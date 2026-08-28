@@ -395,6 +395,63 @@ export function progresso(c: Checklist) {
   };
 }
 
+/**
+ * Agregado de tarefas (itens de checklist) por uma chave — nome do responsável
+ * ou nome do setor. Alimenta as tabelas do dashboard ("tarefas por funcionário"
+ * / "por setor") e os contadores nas páginas de funcionários e setores.
+ */
+export interface AgregadoTarefas {
+  chave: string;
+  total: number;
+  feitos: number;
+  pendentes: number;
+}
+
+/** Percorre os itens das checklists ativas somando por chave. */
+function agregaTarefas(
+  checklists: Checklist[],
+  chaveDoItem: (item: ChecklistItem, checklist: Checklist) => string,
+): AgregadoTarefas[] {
+  const mapa = new Map<string, AgregadoTarefas>();
+  for (const c of checklists) {
+    if (!c.ativo) continue;
+    for (const i of c.itens) {
+      const chave = chaveDoItem(i, c).trim();
+      if (!chave) continue;
+      const atual = mapa.get(chave) ?? { chave, total: 0, feitos: 0, pendentes: 0 };
+      atual.total += 1;
+      if (i.status === "concluido") atual.feitos += 1;
+      else atual.pendentes += 1;
+      mapa.set(chave, atual);
+    }
+  }
+  // Mais pendências primeiro; empata por volume total e depois nome.
+  return [...mapa.values()].sort(
+    (a, b) => b.pendentes - a.pendentes || b.total - a.total || a.chave.localeCompare(b.chave),
+  );
+}
+
+export function tarefasPorFuncionario(checklists: Checklist[]) {
+  return agregaTarefas(checklists, (i) => i.responsavel);
+}
+
+export function tarefasPorSetor(checklists: Checklist[]) {
+  return agregaTarefas(checklists, (_i, c) => c.setor);
+}
+
+/** Acha o agregado de uma chave (ignora caixa/espaços); devolve zerado se não houver. */
+export function resumoDe(agregados: AgregadoTarefas[], chave: string): AgregadoTarefas {
+  const alvo = chave.trim().toLowerCase();
+  return (
+    agregados.find((a) => a.chave.trim().toLowerCase() === alvo) ?? {
+      chave,
+      total: 0,
+      feitos: 0,
+      pendentes: 0,
+    }
+  );
+}
+
 export type ChecklistEstado = "concluido" | "em_andamento" | "pendente";
 
 /** Deriva o estado da checklist a partir do progresso — não é um campo salvo no banco. */

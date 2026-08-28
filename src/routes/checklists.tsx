@@ -39,6 +39,20 @@ import {
   type Turno,
 } from "@/lib/g-check-store";
 
+const ESTADOS_VALIDOS: ChecklistEstado[] = ["pendente", "em_andamento", "concluido"];
+
+/**
+ * Filtros (e o card a destacar) vêm pela URL — assim o dashboard pode linkar
+ * direto para "/checklists" já com um recorte aplicado, e o estado do filtro
+ * fica compartilhável/versionável pelo histórico do navegador.
+ */
+export interface ChecklistSearch {
+  estados?: ChecklistEstado[] | undefined;
+  turnos?: Turno[] | undefined;
+  /** id da checklist que deve abrir expandida e receber scroll ao entrar na página. */
+  checklist?: string | undefined;
+}
+
 export const Route = createFileRoute("/checklists")({
   head: () => ({
     meta: [
@@ -55,6 +69,27 @@ export const Route = createFileRoute("/checklists")({
       },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): ChecklistSearch => {
+    const rawEstados = search["estados"];
+    const rawTurnos = search["turnos"];
+    const rawChecklist = search["checklist"];
+
+    const estados = Array.isArray(rawEstados)
+      ? rawEstados.filter((e): e is ChecklistEstado =>
+          ESTADOS_VALIDOS.includes(e as ChecklistEstado),
+        )
+      : undefined;
+    const turnosSearch = Array.isArray(rawTurnos)
+      ? rawTurnos.filter((t): t is Turno => (turnos as readonly string[]).includes(t as string))
+      : undefined;
+    const checklist = typeof rawChecklist === "string" ? rawChecklist : undefined;
+
+    return {
+      ...(estados && estados.length ? { estados } : {}),
+      ...(turnosSearch && turnosSearch.length ? { turnos: turnosSearch } : {}),
+      ...(checklist ? { checklist } : {}),
+    };
+  },
   component: ChecklistsPage,
 });
 
@@ -213,8 +248,8 @@ function ExcluirChecklistButton({ c }: { c: Checklist }) {
         <AlertDialogHeader>
           <AlertDialogTitle>Excluir “{c.nome}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            A checklist e seus {c.itens.length}{" "}
-            {c.itens.length === 1 ? "item" : "itens"} serão removidos. Não dá para desfazer.
+            A checklist e seus {c.itens.length} {c.itens.length === 1 ? "item" : "itens"} serão
+            removidos. Não dá para desfazer.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -231,15 +266,27 @@ function ExcluirChecklistButton({ c }: { c: Checklist }) {
   );
 }
 
-function ChecklistCard({ c }: { c: Checklist }) {
+function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boolean | undefined }) {
   const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
-  const [aberto, setAberto] = React.useState(false);
+  const [aberto, setAberto] = React.useState(destacar);
+  const sectionRef = React.useRef<HTMLElement>(null);
   const p = progresso(c);
+
+  // Chegou pela URL "?checklist=<id>" (link de uma pendência no dashboard):
+  // rola até a card e a deixa expandida.
+  React.useEffect(() => {
+    if (destacar) sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [destacar]);
 
   return (
     <section
-      className={cn("rounded-2xl border border-border bg-card shadow-sm", !c.ativo && "opacity-70")}
+      ref={sectionRef}
+      className={cn(
+        "scroll-mt-24 rounded-2xl border border-border bg-card shadow-sm transition-shadow",
+        !c.ativo && "opacity-70",
+        destacar && "ring-2 ring-primary/60",
+      )}
     >
       <div className="flex items-start gap-2 p-5">
         <button
@@ -369,25 +416,41 @@ function ChecklistCard({ c }: { c: Checklist }) {
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
-  const [estadosSelecionados, setEstadosSelecionados] = React.useState<ChecklistEstado[]>([]);
-  const [turnosSelecionados, setTurnosSelecionados] = React.useState<Turno[]>([]);
+  const { estados, turnos: turnosSearch, checklist: checklistDestaque } = Route.useSearch();
+  const navigate = Route.useNavigate();
 
-  function toggleEstado(id: ChecklistEstado) {
-    setEstadosSelecionados((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
-    );
-  }
+  const estadosSelecionados = React.useMemo(() => estados ?? [], [estados]);
+  const turnosSelecionados = React.useMemo(() => turnosSearch ?? [], [turnosSearch]);
 
-  function toggleTurno(id: Turno) {
-    setTurnosSelecionados((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id],
-    );
-  }
+  const toggleEstado = React.useCallback(
+    (id: ChecklistEstado) => {
+      navigate({
+        search: (prev) => {
+          const atuais = prev.estados ?? [];
+          const proximo = atuais.includes(id) ? atuais.filter((e) => e !== id) : [...atuais, id];
+          return { ...prev, estados: proximo.length ? proximo : undefined };
+        },
+      });
+    },
+    [navigate],
+  );
 
-  function limparFiltros() {
-    setEstadosSelecionados([]);
-    setTurnosSelecionados([]);
-  }
+  const toggleTurno = React.useCallback(
+    (id: Turno) => {
+      navigate({
+        search: (prev) => {
+          const atuais = prev.turnos ?? [];
+          const proximo = atuais.includes(id) ? atuais.filter((t) => t !== id) : [...atuais, id];
+          return { ...prev, turnos: proximo.length ? proximo : undefined };
+        },
+      });
+    },
+    [navigate],
+  );
+
+  const limparFiltros = React.useCallback(() => {
+    navigate({ search: (prev) => ({ ...prev, estados: undefined, turnos: undefined }) });
+  }, [navigate]);
 
   if (isLoading) {
     return (
@@ -431,7 +494,7 @@ function ChecklistsPage() {
 
         <div className="space-y-4">
           {lista.map((c) => (
-            <ChecklistCard key={c.id} c={c} />
+            <ChecklistCard key={c.id} c={c} destacar={c.id === checklistDestaque} />
           ))}
           {lista.length === 0 && (
             <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
