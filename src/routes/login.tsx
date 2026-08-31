@@ -47,7 +47,9 @@ function LoginPage() {
     const { error } = await signIn(values.email, values.senha);
     setEnviando(false);
     if (error) {
-      setErro("E-mail ou senha inválidos.");
+      // Mostra a mensagem real do Supabase para facilitar o diagnóstico
+      // (credenciais inválidas, e-mail não confirmado, projeto errado, etc.).
+      setErro(error);
     }
   }
 
