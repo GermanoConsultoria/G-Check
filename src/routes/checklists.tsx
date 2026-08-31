@@ -53,6 +53,7 @@ import {
   estadoLabel,
   labelDiasSemana,
   progresso,
+  rodaNoDia,
   turnos,
   useGCheck,
   type Checklist,
@@ -304,19 +305,24 @@ function ChecklistCard({
   c,
   destacar = false,
   travado = false,
+  foraDoDia = false,
 }: {
   c: Checklist;
   destacar?: boolean | undefined;
   /** Dia pausado (feriado): itens não podem ser marcados/concluídos/reabertos. */
   travado?: boolean | undefined;
+  /** Rotina não programada para hoje (diasSemana) — aparece "desativada". */
+  foraDoDia?: boolean | undefined;
 }) {
   const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
   const [aberto, setAberto] = React.useState(destacar);
   const sectionRef = React.useRef<HTMLElement>(null);
   const p = progresso(c);
-  // Dia pausado: a rotina não abre — o card fica só com o cabeçalho.
-  const expandido = aberto && !travado;
+  // Dia pausado ou fora da programação: a rotina não abre nem aceita marcação —
+  // o card fica só com o cabeçalho.
+  const bloqueado = travado || foraDoDia;
+  const expandido = aberto && !bloqueado;
 
   // Chegou pela URL "?checklist=<id>" (link de uma pendência no dashboard):
   // rola até a card e a deixa expandida.
@@ -329,14 +335,14 @@ function ChecklistCard({
       ref={sectionRef}
       className={cn(
         "scroll-mt-24 rounded-2xl border border-border bg-card shadow-sm transition-shadow",
-        !c.ativo && "opacity-70",
+        (!c.ativo || foraDoDia) && "opacity-70",
         destacar && "ring-2 ring-primary/60",
       )}
     >
       <div className="flex items-start gap-2 p-5">
         <button
           onClick={() => setAberto((v) => !v)}
-          disabled={travado}
+          disabled={bloqueado}
           className="flex min-w-0 flex-1 flex-col gap-4 text-left disabled:cursor-not-allowed"
           aria-expanded={expandido}
         >
@@ -363,8 +369,17 @@ function ChecklistCard({
                   Inativa
                 </Badge>
               )}
-              <EstadoBadge c={c} />
-              {!travado && (
+              {foraDoDia ? (
+                <Badge
+                  variant="outline"
+                  className="border-transparent bg-muted text-muted-foreground"
+                >
+                  Desativada hoje
+                </Badge>
+              ) : (
+                <EstadoBadge c={c} />
+              )}
+              {!bloqueado && (
                 <ChevronDown
                   className={cn(
                     "size-4 text-muted-foreground transition-transform",
@@ -401,15 +416,15 @@ function ChecklistCard({
               // ele (comparação por nome, ver ehResponsavel em g-check-store.tsx).
               // Reforçado no banco pela migration
               // 20260824140000_restrict_item_status_to_responsavel.sql.
-              const podeMarcar = !travado && (isAdmin || ehResponsavel(i, profile?.nome));
+              const podeMarcar = !bloqueado && (isAdmin || ehResponsavel(i, profile?.nome));
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
                   <button
                     onClick={() => podeMarcar && toggleItem(c.id, i.id)}
                     disabled={!podeMarcar}
                     aria-label={
-                      travado
-                        ? "Rotinas de hoje desativadas"
+                      bloqueado
+                        ? "Rotina desativada hoje"
                         : !podeMarcar
                           ? `Item atribuído a ${i.responsavel}`
                           : feito
@@ -451,7 +466,7 @@ function ChecklistCard({
               <Button
                 size="sm"
                 onClick={() => concluirTodos(c.id)}
-                disabled={travado || p.pendentes === 0}
+                disabled={bloqueado || p.pendentes === 0}
               >
                 <Check className="size-4" /> Concluir rotina
               </Button>
@@ -459,7 +474,7 @@ function ChecklistCard({
                 size="sm"
                 variant="outline"
                 onClick={() => reabrir(c.id)}
-                disabled={travado || p.feitos === 0}
+                disabled={bloqueado || p.feitos === 0}
               >
                 <RotateCcw className="size-4" /> Reabrir
               </Button>
@@ -622,12 +637,19 @@ function ChecklistsPage() {
   // semana (checklist.diasSemana), o filtro casa pelo getDay() daquela data.
   const diaSemanaAlvo = dia ? dataDoIso(dia).getDay() : null;
 
-  const lista = minhasChecklists.filter(
-    (c) =>
-      (estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c))) &&
-      (turnosSelecionados.length === 0 || turnosSelecionados.includes(c.turno as Turno)) &&
-      (diaSemanaAlvo === null || c.diasSemana.includes(diaSemanaAlvo)),
-  );
+  // Sem "?dia=", rotina não programada para hoje aparece "desativada" (bloqueada).
+  // Funcionário nem vê; admin vê marcada. Filtro de estado esconde essas (não têm
+  // estado do dia).
+  const foraDoDia = (c: Checklist) => diaSemanaAlvo === null && !rodaNoDia(c);
+
+  const lista = minhasChecklists.filter((c) => {
+    if (turnosSelecionados.length > 0 && !turnosSelecionados.includes(c.turno as Turno)) {
+      return false;
+    }
+    if (diaSemanaAlvo !== null && !c.diasSemana.includes(diaSemanaAlvo)) return false;
+    if (foraDoDia(c)) return isAdmin && estadosSelecionados.length === 0;
+    return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
+  });
 
   return (
     <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
@@ -660,6 +682,7 @@ function ChecklistsPage() {
               c={c}
               destacar={c.id === checklistDestaque}
               travado={hojeDesativado}
+              foraDoDia={foraDoDia(c)}
             />
           ))}
           {lista.length === 0 && (

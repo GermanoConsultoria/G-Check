@@ -57,9 +57,9 @@ const ESTILO: Record<
   },
   hoje: {
     label: "Em andamento",
-    dot: "bg-info",
-    texto: "text-info",
-    pill: "bg-info/15 text-info",
+    dot: "bg-chart-4",
+    texto: "text-chart-4",
+    pill: "bg-chart-4/20 text-chart-4",
   },
   incompleta: {
     label: "Incompleta",

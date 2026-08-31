@@ -531,6 +531,15 @@ export function resumoDe(agregados: AgregadoTarefas[], chave: string): AgregadoT
   );
 }
 
+/**
+ * A rotina está programada para rodar nesta data? Fora dos dias marcados em
+ * `diasSemana` a rotina conta como "desativada" naquele dia — não é cobrada no
+ * dashboard, não pode ser marcada e nem abre na lista.
+ */
+export function rodaNoDia(c: Checklist, data: Date = new Date()): boolean {
+  return c.diasSemana.includes(data.getDay());
+}
+
 export type ChecklistEstado = "concluido" | "em_andamento" | "pendente" | "atrasada";
 
 /** Minutos desde a meia-noite de um "HH:MM" (ou de um Date). */

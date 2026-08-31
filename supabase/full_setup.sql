@@ -234,15 +234,18 @@ create trigger checklist_items_restrict_funcionario_update
   before update on checklist_items
   for each row execute function public.checklist_items_restrict_funcionario_update();
 
--- Dia desativado (feriado): enquanto current_date estiver em dias_desativados,
--- funcionário não muda status de item nenhum. Admin passa (pode reativar o dia).
--- (migration 20260831140000)
+-- Rotina "desativada" para o funcionário quando: o dia está pausado
+-- (dias_desativados) OU a rotina não está programada para o dia da semana de hoje
+-- (checklists.dias_semana). Admin passa; o rollover passa pelo GUC.
+-- (migrations 20260831140000 + 20260831170000)
 create or replace function public.checklist_items_block_on_disabled_day()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  dias smallint[];
 begin
   if coalesce(current_setting('app.bypass_item_guard', true), '') = 'on' then
     return new;
@@ -254,6 +257,11 @@ begin
 
   if exists (select 1 from public.dias_desativados where data = current_date) then
     raise exception 'As rotinas de hoje estão desativadas. Fale com o administrador.';
+  end if;
+
+  select dias_semana into dias from public.checklists where id = new.checklist_id;
+  if dias is not null and not (extract(dow from current_date)::int = any (dias)) then
+    raise exception 'Esta rotina não está programada para hoje.';
   end if;
 
   return new;

@@ -43,6 +43,7 @@ import {
   estado,
   estadoLabel,
   progresso,
+  rodaNoDia,
   tarefasPorFuncionario,
   tarefasPorSetor,
   useGCheck,
@@ -322,14 +323,17 @@ function Dashboard() {
     );
   }
 
+  // Só entram no painel de hoje as rotinas ativas E programadas para o dia da
+  // semana atual (checklist.diasSemana). As demais contam como "desativadas hoje".
   const ativas = checklists.filter((c) => c.ativo);
+  const rotinasDeHoje = ativas.filter((c) => rodaNoDia(c));
   const inativas = checklists.length - ativas.length;
-  // Admin vê todas as checklists ativas por inteiro. Funcionário vê versões
+  // Admin vê todas as rotinas de hoje por inteiro. Funcionário vê versões
   // "recortadas": cada checklist mostra só os itens atribuídos a ele, e a
   // checklist inteira some se nenhum item dela for dele (evita "cascas vazias").
   const doDia: Checklist[] = isAdmin
-    ? ativas
-    : ativas
+    ? rotinasDeHoje
+    : rotinasDeHoje
         .map((c) => ({ ...c, itens: c.itens.filter((i) => ehResponsavel(i, profile?.nome)) }))
         .filter((c) => c.itens.length > 0);
   // Dia pausado (feriado): nada é cobrado hoje — o dashboard calcula como se não
@@ -357,8 +361,8 @@ function Dashboard() {
 
   // Distribuição das tarefas (itens) por responsável e por setor — só faz
   // sentido para o admin, que enxerga todas as checklists ativas.
-  const porFuncionario = isAdmin && !hojeDesativado ? tarefasPorFuncionario(checklists) : [];
-  const porSetor = isAdmin && !hojeDesativado ? tarefasPorSetor(checklists) : [];
+  const porFuncionario = isAdmin && !hojeDesativado ? tarefasPorFuncionario(rotinasDeHoje) : [];
+  const porSetor = isAdmin && !hojeDesativado ? tarefasPorSetor(rotinasDeHoje) : [];
 
   return (
     <AppShell title="Dashboard" subtitle={subtitle}>
@@ -418,12 +422,16 @@ function Dashboard() {
             tone="primary"
           />
           <Metric
-            label="Rotinas ativas"
+            label="Rotinas de hoje"
             value={String(visiveis.length)}
             hint={
-              isAdmin && inativas > 0
-                ? `${inativas} rotina${inativas > 1 ? "s" : ""} inativa${inativas > 1 ? "s" : ""}`
-                : "turnos manhã, tarde e noite"
+              isAdmin && ativas.length - rotinasDeHoje.length > 0
+                ? `${ativas.length - rotinasDeHoje.length} não programada${
+                    ativas.length - rotinasDeHoje.length > 1 ? "s" : ""
+                  } para hoje`
+                : isAdmin && inativas > 0
+                  ? `${inativas} rotina${inativas > 1 ? "s" : ""} inativa${inativas > 1 ? "s" : ""}`
+                  : "turnos manhã, tarde e noite"
             }
             icon={ListChecks}
             tone="neutral"
@@ -457,7 +465,7 @@ function Dashboard() {
                         className={cn(
                           "shrink-0 border-transparent",
                           e === "concluido" && "bg-success/15 text-success",
-                          e === "em_andamento" && "bg-info/15 text-info",
+                          e === "em_andamento" && "bg-chart-4/20 text-chart-4",
                           e === "atrasada" && "bg-destructive/15 text-destructive",
                           e === "pendente" && "bg-muted text-muted-foreground",
                         )}
