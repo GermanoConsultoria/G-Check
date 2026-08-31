@@ -270,7 +270,7 @@ function VistaCalendario({
 }
 
 function HistoricoPage() {
-  const { session } = useAuth();
+  const { session, isAdmin, isLoading: authLoading } = useAuth();
   const { checklists, isLoading: carregandoChecklists } = useGCheck();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -293,13 +293,13 @@ function HistoricoPage() {
   const execucoesQuery = useQuery({
     queryKey: [...HISTORICO_QUERY_KEY, rangeDeISO, rangeAteISO],
     queryFn: () => fetchExecucoes(rangeDeISO, rangeAteISO),
-    enabled: !!session,
+    enabled: !!session && isAdmin,
   });
 
   const diasDesativadosQuery = useQuery({
     queryKey: DIAS_DESATIVADOS_QUERY_KEY,
     queryFn: fetchDiasDesativados,
-    enabled: !!session,
+    enabled: !!session && isAdmin,
   });
 
   const dias = React.useMemo(
@@ -333,6 +333,20 @@ function HistoricoPage() {
   }
 
   const carregando = carregandoChecklists || execucoesQuery.isLoading;
+
+  if (authLoading) return null;
+
+  // Histórico é só para admin. A tabela checklist_execucoes também tem RLS
+  // restringindo a leitura, então isto aqui é a barreira de UI.
+  if (!isAdmin) {
+    return (
+      <AppShell title="Histórico">
+        <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          Acesso restrito a administradores.
+        </p>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell title="Histórico" subtitle="Registro diário das rotinas">

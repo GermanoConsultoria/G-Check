@@ -24,12 +24,15 @@ type NavItem = {
 const navBase: readonly NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/checklists", label: "Checklists", icon: ListChecks, exact: false },
+];
+
+// Seção só de admin. As rotas também se autoprotegem (ver historico.tsx /
+// funcionarios.tsx / setores.tsx), então esconder aqui é só para não oferecer
+// um link que levaria a uma tela de acesso negado.
+const navAdmin: readonly NavItem[] = [
   { to: "/historico", label: "Histórico", icon: History, exact: false },
 ];
 
-// Seção só de admin. As rotas também se autoprotegem (ver funcionarios.tsx /
-// setores.tsx), então esconder aqui é só para não oferecer um link que levaria
-// a uma tela de acesso negado.
 const navCadastros: readonly NavItem[] = [
   { to: "/funcionarios", label: "Funcionários", icon: Users, exact: false },
   { to: "/setores", label: "Setores", icon: Building2, exact: false },
@@ -61,6 +64,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
       {isAdmin && (
         <>
+          {navAdmin.map((item) => (
+            <NavLink key={item.to} item={item} onNavigate={onNavigate} />
+          ))}
           <p className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
             Rotina de cadastros
           </p>

@@ -58,6 +58,7 @@ import {
   useGCheck,
   type Checklist,
   type ChecklistEstado,
+  type ChecklistItem,
   type Turno,
 } from "@/lib/g-check-store";
 
@@ -532,6 +533,136 @@ function BannerRotinasPausadas({ hojeISO }: { hojeISO: string }) {
   );
 }
 
+const fmtDataTarefa = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+
+/**
+ * Uma tarefa (item) do funcionário: o item em si, a rotina a que pertence e o
+ * estado derivado só daquela tarefa — concluída, atrasada (rotina passou do
+ * tempo limite sem terminar) ou pendente.
+ */
+interface TarefaFuncionario {
+  checklist: Checklist;
+  item: ChecklistItem;
+  estado: ChecklistEstado;
+}
+
+function estadoDaTarefa(c: Checklist, i: ChecklistItem): ChecklistEstado {
+  if (i.status === "concluido") return "concluido";
+  return estado(c) === "atrasada" ? "atrasada" : "pendente";
+}
+
+/**
+ * Linha da lista de tarefas do funcionário: check para concluir + título da
+ * tarefa, a rotina a que pertence logo abaixo e, no fim da linha, horário, data
+ * e o estado atual.
+ */
+function TarefaRow({
+  tarefa,
+  data,
+  bloqueado,
+}: {
+  tarefa: TarefaFuncionario;
+  data: Date;
+  bloqueado: boolean;
+}) {
+  const { toggleItem } = useGCheck();
+  const { checklist: c, item: i, estado: est } = tarefa;
+  const feito = i.status === "concluido";
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+      <button
+        onClick={() => !bloqueado && toggleItem(c.id, i.id)}
+        disabled={bloqueado}
+        aria-label={
+          bloqueado
+            ? "Rotina desativada hoje"
+            : feito
+              ? `Reabrir ${i.titulo}`
+              : `Concluir ${i.titulo}`
+        }
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+          feito
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-input hover:border-primary",
+          bloqueado && "cursor-not-allowed opacity-50 hover:border-input",
+        )}
+      >
+        {feito && <Check className="size-3.5" />}
+      </button>
+
+      <div className="min-w-0 flex-1 basis-48">
+        <p
+          className={cn(
+            "truncate text-sm font-medium",
+            feito && "text-muted-foreground line-through",
+          )}
+        >
+          {i.titulo}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">{c.nome}</p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-3 pl-8 sm:pl-0">
+        <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Clock className="size-3.5" /> {c.horario}
+            {c.tempoLimite && ` · até ${c.tempoLimite}`}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <CalendarDays className="size-3.5" /> {fmtDataTarefa.format(data)}
+          </span>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "shrink-0 border-transparent font-medium",
+            est === "concluido" && "bg-success/15 text-success",
+            est === "atrasada" && "bg-destructive/15 text-destructive",
+            est === "pendente" && "bg-muted text-muted-foreground",
+          )}
+        >
+          {estadoLabel[est]}
+        </Badge>
+      </div>
+    </li>
+  );
+}
+
+function TarefasFuncionarioLista({
+  tarefas,
+  data,
+  bloqueado,
+  comFiltro,
+}: {
+  tarefas: TarefaFuncionario[];
+  data: Date;
+  bloqueado: boolean;
+  comFiltro: boolean;
+}) {
+  if (tarefas.length === 0) {
+    return (
+      <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+        {comFiltro ? "Nenhuma tarefa para esse recorte." : "Você não tem tarefas para hoje."}
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      {tarefas.map((t) => (
+        <TarefaRow
+          key={`${t.checklist.id}-${t.item.id}`}
+          tarefa={t}
+          data={data}
+          bloqueado={bloqueado}
+        />
+      ))}
+    </ul>
+  );
+}
+
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
@@ -651,8 +782,42 @@ function ChecklistsPage() {
     return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
   });
 
+  // Data mostrada em cada tarefa: o dia escolhido no seletor ou hoje.
+  const dataAlvo = dia ? dataDoIso(dia) : new Date();
+
+  // Funcionário não vê a rotina inteira: percorre os itens atribuídos a ele
+  // (nas rotinas que passam pelos mesmos filtros de turno/dia) e monta uma
+  // lista plana de tarefas, ordenada pelo que precisa de ação primeiro.
+  const tarefasFuncionario: TarefaFuncionario[] = isAdmin
+    ? []
+    : minhasChecklists
+        .filter((c) => {
+          if (turnosSelecionados.length > 0 && !turnosSelecionados.includes(c.turno as Turno)) {
+            return false;
+          }
+          if (diaSemanaAlvo !== null && !c.diasSemana.includes(diaSemanaAlvo)) return false;
+          return !foraDoDia(c);
+        })
+        .flatMap((c) =>
+          c.itens
+            .filter((i) => ehResponsavel(i, profile?.nome))
+            .map((i) => ({ checklist: c, item: i, estado: estadoDaTarefa(c, i) })),
+        )
+        .filter((t) => estadosSelecionados.length === 0 || estadosSelecionados.includes(t.estado))
+        .sort(
+          (a, b) =>
+            a.checklist.horario.localeCompare(b.checklist.horario) ||
+            a.item.titulo.localeCompare(b.item.titulo),
+        );
+
+  const temFiltro =
+    estadosSelecionados.length > 0 || turnosSelecionados.length > 0 || diaSemanaAlvo !== null;
+
   return (
-    <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
+    <AppShell
+      title="Checklists"
+      subtitle={isAdmin ? "Rotinas operacionais da Loja Centro" : "Suas tarefas do dia"}
+    >
       <div className="mx-auto max-w-4xl space-y-5">
         {hojeDesativado && <BannerRotinasPausadas hojeISO={hojeISO} />}
 
@@ -675,24 +840,33 @@ function ChecklistsPage() {
           {isAdmin && <NovaChecklistDialog />}
         </div>
 
-        <div className="space-y-4">
-          {lista.map((c) => (
-            <ChecklistCard
-              key={c.id}
-              c={c}
-              destacar={c.id === checklistDestaque}
-              travado={hojeDesativado}
-              foraDoDia={foraDoDia(c)}
-            />
-          ))}
-          {lista.length === 0 && (
-            <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              {diaSemanaAlvo !== null
-                ? "Nenhuma rotina para o dia escolhido."
-                : "Nenhuma rotina neste estado."}
-            </p>
-          )}
-        </div>
+        {isAdmin ? (
+          <div className="space-y-4">
+            {lista.map((c) => (
+              <ChecklistCard
+                key={c.id}
+                c={c}
+                destacar={c.id === checklistDestaque}
+                travado={hojeDesativado}
+                foraDoDia={foraDoDia(c)}
+              />
+            ))}
+            {lista.length === 0 && (
+              <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                {diaSemanaAlvo !== null
+                  ? "Nenhuma rotina para o dia escolhido."
+                  : "Nenhuma rotina neste estado."}
+              </p>
+            )}
+          </div>
+        ) : (
+          <TarefasFuncionarioLista
+            tarefas={tarefasFuncionario}
+            data={dataAlvo}
+            bloqueado={hojeDesativado}
+            comFiltro={temFiltro}
+          />
+        )}
       </div>
     </AppShell>
   );

@@ -493,13 +493,15 @@ create policy "admin reativa dia"
   to authenticated
   using (is_admin());
 
--- checklist_execucoes: todo autenticado lê o histórico; escrita só pelas funções
--- security definer do rollover. app_estado é interno (sem policy).
+-- checklist_execucoes: só admin lê o histórico (a tela de Histórico é exclusiva
+-- do admin); escrita só pelas funções security definer do rollover. app_estado
+-- é interno (sem policy).
 drop policy if exists "autenticados veem execucoes" on checklist_execucoes;
-create policy "autenticados veem execucoes"
+drop policy if exists "admin ve execucoes" on checklist_execucoes;
+create policy "admin ve execucoes"
   on checklist_execucoes for select
   to authenticated
-  using (true);
+  using (is_admin());
 
 -- Agendamento do rollover diário (pg_cron) — best effort; se indisponível, o
 -- fallback do client (rollover_pendente ao abrir o app) mantém o reset.
