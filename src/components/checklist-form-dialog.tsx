@@ -41,6 +41,7 @@ import {
   type Checklist,
 } from "@/lib/g-check-store";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
+import { fetchSetores, SETORES_QUERY_KEY } from "@/lib/setores";
 import { cn } from "@/lib/utils";
 
 const itemSchema = z.object({
@@ -129,6 +130,13 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
   });
   const nomesFuncionarios = Array.from(new Set(funcionarios.map((f) => f.nome)));
 
+  const { data: setores = [] } = useQuery({
+    queryKey: SETORES_QUERY_KEY,
+    queryFn: fetchSetores,
+    enabled: open,
+  });
+  const nomesSetores = Array.from(new Set(setores.map((s) => s.nome)));
+
   function onOpenChange(next: boolean) {
     setOpen(next);
     form.reset(valoresPadrao(checklist));
@@ -210,15 +218,40 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
               <FormField
                 control={form.control}
                 name="setor"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Setor</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ex.: Comercial" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  // Só dá pra escolher um setor cadastrado; se a checklist já
+                  // tinha um setor que foi removido depois, ele entra na lista
+                  // como opção extra para não sumir ao editar.
+                  const opcoes =
+                    field.value && !nomesSetores.includes(field.value)
+                      ? [field.value, ...nomesSetores]
+                      : nomesSetores;
+                  return (
+                    <FormItem>
+                      <FormLabel>Setor</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione um setor" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {opcoes.length === 0 && (
+                            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                              Nenhum setor cadastrado
+                            </p>
+                          )}
+                          {opcoes.map((nome) => (
+                            <SelectItem key={nome} value={nome}>
+                              {nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
               <FormField
                 control={form.control}
