@@ -5,16 +5,29 @@ import { toast } from "sonner";
 import {
   AlertCircle,
   AlertTriangle,
+  BarChart3,
   Building2,
   CalendarCheck,
   CalendarOff,
   CheckCircle2,
   Clock,
+  List,
   ListChecks,
+  PieChart as PieChartIcon,
   TrendingUp,
   Users,
 } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { AppShell } from "@/components/app-shell";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ChecklistSearch } from "@/routes/checklists";
 import {
   AlertDialog,
@@ -124,10 +137,140 @@ function Metric({
   return <div className={base}>{conteudo}</div>;
 }
 
+/** Modos de visualização dos cards de tarefas por funcionário / por setor. */
+type VistaTarefas = "barras" | "pizza" | "colunas";
+
+/** Paleta cíclica p/ o gráfico de pizza (uma fatia por funcionário/setor). */
+const PALETA_TAREFAS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
+
+/** Cor da fatia i, ciclando na paleta (nunca undefined). */
+function corDaFatia(i: number): string {
+  return PALETA_TAREFAS[i % PALETA_TAREFAS.length] ?? "var(--chart-1)";
+}
+
+/** Config compartilhada dos gráficos que quebram por status (colunas empilhadas). */
+const chartConfigStatus = {
+  feitos: { label: "Concluídas", color: "var(--success)" },
+  noPrazo: { label: "Pendentes", color: "var(--chart-4)" },
+  atrasados: { label: "Atrasadas", color: "var(--destructive)" },
+} satisfies ChartConfig;
+
 /**
- * Tabela-gráfico: uma linha por funcionário/setor com barra empilhada
- * (concluídos + pendentes) normalizada pelo maior volume da lista, para o
- * comprimento também comunicar carga de trabalho. Ordenada por pendências.
+ * Vista "barras": uma linha por funcionário/setor com barra 100% preenchida,
+ * dividida entre concluídas (verde), atrasadas (vermelho) e pendentes no prazo
+ * (âmbar) pela contagem da própria linha. Ordenada por pendências.
+ */
+function BarrasTarefas({ dados, rotuloItem }: { dados: AgregadoTarefas[]; rotuloItem: string }) {
+  return (
+    <ul className="mt-4 space-y-3">
+      {dados.map((d) => (
+        <li key={d.chave} className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="truncate font-medium">{d.chave}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {d.atrasados > 0 ? (
+                <span className="font-medium text-destructive">
+                  {d.atrasados} atrasada{d.atrasados > 1 ? "s" : ""}
+                </span>
+              ) : d.pendentes > 0 ? (
+                <span className="font-medium text-chart-4">
+                  {d.pendentes} pendente{d.pendentes > 1 ? "s" : ""}
+                </span>
+              ) : (
+                <span className="font-medium text-success">em dia</span>
+              )}{" "}
+              · {d.total} {d.total === 1 ? rotuloItem : `${rotuloItem}s`}
+            </span>
+          </div>
+          <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className="bg-success"
+              style={{ width: `${d.total ? (d.feitos / d.total) * 100 : 0}%` }}
+            />
+            <div
+              className="bg-destructive"
+              style={{ width: `${d.total ? (d.atrasados / d.total) * 100 : 0}%` }}
+            />
+            <div
+              className="bg-chart-4"
+              style={{
+                width: `${d.total ? ((d.pendentes - d.atrasados) / d.total) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Vista "pizza": distribuição do volume total de tarefas por funcionário/setor. */
+function PizzaTarefas({ dados }: { dados: AgregadoTarefas[] }) {
+  const data = dados.map((d, i) => ({
+    chave: d.chave,
+    total: d.total,
+    fill: corDaFatia(i),
+  }));
+  const config: ChartConfig = Object.fromEntries(
+    dados.map((d, i) => [d.chave, { label: d.chave, color: corDaFatia(i) }]),
+  );
+
+  return (
+    <ChartContainer config={config} className="mx-auto mt-4 aspect-square max-h-[260px]">
+      <PieChart>
+        <ChartTooltip content={<ChartTooltipContent nameKey="chave" hideLabel />} />
+        <Pie data={data} dataKey="total" nameKey="chave" innerRadius={55} strokeWidth={2}>
+          {data.map((d) => (
+            <Cell key={d.chave} fill={d.fill} />
+          ))}
+        </Pie>
+        <ChartLegend content={<ChartLegendContent nameKey="chave" />} className="flex-wrap" />
+      </PieChart>
+    </ChartContainer>
+  );
+}
+
+/** Vista "colunas": barras verticais empilhadas por status (feito/pendente/atrasado). */
+function ColunasTarefas({ dados }: { dados: AgregadoTarefas[] }) {
+  const data = dados.map((d) => ({
+    chave: d.chave,
+    feitos: d.feitos,
+    noPrazo: Math.max(0, d.pendentes - d.atrasados),
+    atrasados: d.atrasados,
+  }));
+
+  return (
+    <ChartContainer config={chartConfigStatus} className="mt-4 aspect-auto h-[260px] w-full">
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="chave"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 9)}…` : v)}
+        />
+        <YAxis tickLine={false} axisLine={false} allowDecimals={false} width={28} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Bar dataKey="feitos" stackId="a" fill="var(--color-feitos)" radius={[0, 0, 4, 4]} />
+        <Bar dataKey="noPrazo" stackId="a" fill="var(--color-noPrazo)" />
+        <Bar dataKey="atrasados" stackId="a" fill="var(--color-atrasados)" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+/**
+ * Card do dashboard com a quebra de tarefas por funcionário / por setor. O
+ * cabeçalho traz um seletor com 3 formas de ver os mesmos dados: barras (lista),
+ * pizza (distribuição do volume) e colunas (empilhado por status).
  */
 function TarefasBreakdown({
   titulo,
@@ -145,62 +288,49 @@ function TarefasBreakdown({
   /** singular do que cada tarefa representa, p/ concordância ("tarefa"/"tarefas"). */
   rotuloItem: string;
 }) {
+  const [vista, setVista] = React.useState<VistaTarefas>("barras");
+
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="size-4" />
-        </span>
-        <div>
-          <h2 className="text-base font-semibold tracking-tight">{titulo}</h2>
-          <p className="text-xs text-muted-foreground">{descricao}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="size-4" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">{titulo}</h2>
+            <p className="text-xs text-muted-foreground">{descricao}</p>
+          </div>
         </div>
+        <ToggleGroup
+          type="single"
+          size="sm"
+          variant="outline"
+          value={vista}
+          onValueChange={(v) => v && setVista(v as VistaTarefas)}
+          className="shrink-0"
+        >
+          <ToggleGroupItem value="barras" aria-label="Ver em barras">
+            <List className="size-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="pizza" aria-label="Ver em pizza">
+            <PieChartIcon className="size-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="colunas" aria-label="Ver em colunas">
+            <BarChart3 className="size-4" />
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
-      <ul className="mt-4 space-y-3">
-        {dados.map((d) => (
-          <li key={d.chave} className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="truncate font-medium">{d.chave}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {d.atrasados > 0 ? (
-                  <span className="font-medium text-destructive">
-                    {d.atrasados} atrasada{d.atrasados > 1 ? "s" : ""}
-                  </span>
-                ) : d.pendentes > 0 ? (
-                  <span className="font-medium text-chart-4">
-                    {d.pendentes} pendente{d.pendentes > 1 ? "s" : ""}
-                  </span>
-                ) : (
-                  <span className="font-medium text-success">em dia</span>
-                )}{" "}
-                · {d.total} {d.total === 1 ? rotuloItem : `${rotuloItem}s`}
-              </span>
-            </div>
-            {/* Barra 100% preenchida: cada linha se divide entre concluídas
-                (verde), atrasadas (vermelho) e pendentes no prazo (âmbar) pela
-                SUA própria contagem, sem comparar com as outras. */}
-            <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="bg-success"
-                style={{ width: `${d.total ? (d.feitos / d.total) * 100 : 0}%` }}
-              />
-              <div
-                className="bg-destructive"
-                style={{ width: `${d.total ? (d.atrasados / d.total) * 100 : 0}%` }}
-              />
-              <div
-                className="bg-chart-4"
-                style={{
-                  width: `${d.total ? ((d.pendentes - d.atrasados) / d.total) * 100 : 0}%`,
-                }}
-              />
-            </div>
-          </li>
-        ))}
-        {dados.length === 0 && (
-          <li className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">{vazio}</li>
-        )}
-      </ul>
+
+      {dados.length === 0 ? (
+        <p className="mt-4 rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">{vazio}</p>
+      ) : vista === "barras" ? (
+        <BarrasTarefas dados={dados} rotuloItem={rotuloItem} />
+      ) : vista === "pizza" ? (
+        <PizzaTarefas dados={dados} />
+      ) : (
+        <ColunasTarefas dados={dados} />
+      )}
     </section>
   );
 }
