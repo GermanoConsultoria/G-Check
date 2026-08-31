@@ -17,3 +17,16 @@ export function isoDoDia(date: Date): string {
 export function dataDoIso(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
 }
+
+/**
+ * Grade de um mês para calendário: começa no domingo anterior (ou no próprio)
+ * dia 1 e vai até fechar a última semana, então toda célula é um Date real
+ * (as de "fora do mês" inclusas).
+ */
+export function celulasDoMes(ref: Date): Date[] {
+  const ano = ref.getFullYear();
+  const mes = ref.getMonth();
+  const offset = new Date(ano, mes, 1).getDay();
+  const total = Math.ceil((offset + new Date(ano, mes + 1, 0).getDate()) / 7) * 7;
+  return Array.from({ length: total }, (_, i) => new Date(ano, mes, i - offset + 1));
+}

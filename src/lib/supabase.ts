@@ -43,3 +43,21 @@ export interface DiaDesativadoRow {
   criado_por: string | null;
   created_at: string;
 }
+
+/** Snapshot de uma checklist num dia — gravado no rollover diário. */
+export interface ChecklistExecucaoRow {
+  id: string;
+  checklist_id: string;
+  /** ISO "yyyy-MM-dd". */
+  data: string;
+  nome: string;
+  setor: string;
+  turno: string;
+  /** "HH:MM:SS". */
+  horario: string;
+  total_itens: number;
+  itens_concluidos: number;
+  completa: boolean;
+  itens: { titulo: string; responsavel: string; status: string }[];
+  registrado_em: string;
+}

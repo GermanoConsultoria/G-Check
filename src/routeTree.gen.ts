@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChecklistsRouteImport } from './routes/checklists'
 import { Route as FuncionariosRouteImport } from './routes/funcionarios'
+import { Route as HistoricoRouteImport } from './routes/historico'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetoresRouteImport } from './routes/setores'
 
@@ -30,6 +31,11 @@ const FuncionariosRoute = FuncionariosRouteImport.update({
   path: '/funcionarios',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HistoricoRoute = HistoricoRouteImport.update({
+  id: '/historico',
+  path: '/historico',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/setores': typeof SetoresRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/setores': typeof SetoresRoute
 }
@@ -60,21 +68,32 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/checklists': typeof ChecklistsRoute
   '/funcionarios': typeof FuncionariosRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/setores': typeof SetoresRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
+  fullPaths:
+    '/' | '/checklists' | '/funcionarios' | '/historico' | '/login' | '/setores'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
-  id: '__root__' | '/' | '/checklists' | '/funcionarios' | '/login' | '/setores'
+  to:
+    '/' | '/checklists' | '/funcionarios' | '/historico' | '/login' | '/setores'
+  id:
+    | '__root__'
+    | '/'
+    | '/checklists'
+    | '/funcionarios'
+    | '/historico'
+    | '/login'
+    | '/setores'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChecklistsRoute: typeof ChecklistsRoute
   FuncionariosRoute: typeof FuncionariosRoute
+  HistoricoRoute: typeof HistoricoRoute
   LoginRoute: typeof LoginRoute
   SetoresRoute: typeof SetoresRoute
 }
@@ -102,6 +121,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FuncionariosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/historico': {
+      id: '/historico'
+      path: '/historico'
+      fullPath: '/historico'
+      preLoaderRoute: typeof HistoricoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -123,6 +149,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChecklistsRoute: ChecklistsRoute,
   FuncionariosRoute: FuncionariosRoute,
+  HistoricoRoute: HistoricoRoute,
   LoginRoute: LoginRoute,
   SetoresRoute: SetoresRoute,
 }

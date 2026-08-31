@@ -78,6 +78,31 @@ create table if not exists dias_desativados (
   created_at timestamptz not null default now()
 );
 
+-- Histórico + reset diário (migration 20260831150000).
+create table if not exists app_estado (
+  chave text primary key,
+  valor text not null,
+  atualizado_em timestamptz not null default now()
+);
+
+create table if not exists checklist_execucoes (
+  id uuid primary key default gen_random_uuid(),
+  checklist_id text not null,
+  data date not null,
+  nome text not null,
+  setor text not null,
+  turno text not null,
+  horario time not null,
+  total_itens integer not null default 0,
+  itens_concluidos integer not null default 0,
+  completa boolean not null default false,
+  itens jsonb not null default '[]',
+  registrado_em timestamptz not null default now(),
+  unique (checklist_id, data)
+);
+
+create index if not exists checklist_execucoes_data_idx on checklist_execucoes (data);
+
 create table if not exists profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   nome text not null,
@@ -170,6 +195,11 @@ as $$
 declare
   meu_nome text;
 begin
+  -- rollover diário (rollover_pendente) reinicia o status em massa
+  if coalesce(current_setting('app.bypass_item_guard', true), '') = 'on' then
+    return new;
+  end if;
+
   if public.is_admin() then
     return new;
   end if;
@@ -210,6 +240,10 @@ security definer
 set search_path = public
 as $$
 begin
+  if coalesce(current_setting('app.bypass_item_guard', true), '') = 'on' then
+    return new;
+  end if;
+
   if public.is_admin() then
     return new;
   end if;
@@ -227,6 +261,89 @@ create trigger checklist_items_block_on_disabled_day
   before update on checklist_items
   for each row execute function public.checklist_items_block_on_disabled_day();
 
+-- Rollover diário: congela o dia que acabou em checklist_execucoes e reinicia os
+-- itens. Idempotente (advisory lock + app_estado.ultimo_rollover). Disparado pelo
+-- pg_cron e, como fallback, pelo client ao abrir o app. (migration 20260831150000)
+create or replace function public.rollover_snapshot_dia(alvo date, usar_estado boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into checklist_execucoes
+    (checklist_id, data, nome, setor, turno, horario, total_itens, itens_concluidos, completa, itens)
+  select
+    c.id, alvo, c.nome, c.setor, c.turno, c.horario,
+    count(ci.id),
+    case when usar_estado
+      then count(ci.id) filter (where ci.status = 'concluido') else 0 end,
+    case when usar_estado
+      then (count(ci.id) > 0 and count(ci.id) = count(ci.id) filter (where ci.status = 'concluido'))
+      else false end,
+    coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'titulo', ci.titulo,
+          'responsavel', ci.responsavel,
+          'status', case when usar_estado then ci.status else 'pendente' end
+        ) order by ci.posicao
+      ) filter (where ci.id is not null),
+      '[]'
+    )
+  from checklists c
+  left join checklist_items ci on ci.checklist_id = c.id
+  where c.ativo
+    and extract(dow from alvo)::int = any (c.dias_semana)
+    and not exists (select 1 from dias_desativados dd where dd.data = alvo)
+  group by c.id
+  on conflict (checklist_id, data) do nothing;
+end;
+$$;
+
+create or replace function public.rollover_pendente()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  tz constant text := 'America/Sao_Paulo';
+  hoje_local date := (now() at time zone tz)::date;
+  ultimo date;
+  d date;
+begin
+  perform pg_advisory_xact_lock(hashtext('rollover_checklists'));
+
+  select valor::date into ultimo from app_estado where chave = 'ultimo_rollover';
+
+  if ultimo is null then
+    insert into app_estado (chave, valor) values ('ultimo_rollover', hoje_local::text)
+      on conflict (chave) do update set valor = excluded.valor, atualizado_em = now();
+    return;
+  end if;
+
+  if ultimo >= hoje_local then
+    return;
+  end if;
+
+  perform public.rollover_snapshot_dia(ultimo, true);
+  d := ultimo + 1;
+  while d < hoje_local loop
+    perform public.rollover_snapshot_dia(d, false);
+    d := d + 1;
+  end loop;
+
+  perform set_config('app.bypass_item_guard', 'on', true);
+  update checklist_items set status = 'pendente' where status <> 'pendente';
+
+  update app_estado set valor = hoje_local::text, atualizado_em = now()
+    where chave = 'ultimo_rollover';
+end;
+$$;
+
+grant execute on function public.rollover_pendente() to authenticated;
+
 
 -- ============================================================================
 -- 3. RLS (políticas)
@@ -237,6 +354,8 @@ alter table checklist_items enable row level security;
 alter table profiles enable row level security;
 alter table setores enable row level security;
 alter table dias_desativados enable row level security;
+alter table app_estado enable row level security;
+alter table checklist_execucoes enable row level security;
 
 -- Limpa qualquer política anterior (inclui o "anon full access" da 1ª migration,
 -- que liberava acesso sem login).
@@ -361,6 +480,30 @@ create policy "admin reativa dia"
   on dias_desativados for delete
   to authenticated
   using (is_admin());
+
+-- checklist_execucoes: todo autenticado lê o histórico; escrita só pelas funções
+-- security definer do rollover. app_estado é interno (sem policy).
+drop policy if exists "autenticados veem execucoes" on checklist_execucoes;
+create policy "autenticados veem execucoes"
+  on checklist_execucoes for select
+  to authenticated
+  using (true);
+
+-- Agendamento do rollover diário (pg_cron) — best effort; se indisponível, o
+-- fallback do client (rollover_pendente ao abrir o app) mantém o reset.
+-- 03h05 UTC ~= 00h05 America/Sao_Paulo.
+do $$
+begin
+  execute 'create extension if not exists pg_cron';
+  perform cron.schedule(
+    'rollover-checklists-diario',
+    '5 3 * * *',
+    'select public.rollover_pendente()'
+  );
+exception when others then
+  raise notice 'pg_cron nao configurado (%). Reset diario via fallback do client.', sqlerrm;
+end;
+$$;
 
 
 -- ============================================================================

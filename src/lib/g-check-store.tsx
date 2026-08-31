@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase, type ChecklistItemRow, type ChecklistRow } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-store";
+import { HISTORICO_QUERY_KEY, rolloverPendente } from "@/lib/historico";
 
 export type ItemStatus = "pendente" | "concluido";
 
@@ -139,6 +140,31 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   // "enabled: !!session" evita chamar o Supabase (e estourar RLS) antes do login terminar.
   const query = useQuery({ queryKey: QUERY_KEY, queryFn: fetchChecklists, enabled: !!session });
+
+  // Rede de segurança do reset diário: além do pg_cron, o client chama
+  // rollover_pendente() ao abrir e de tempos em tempos (cobre a aba deixada
+  // aberta virando a meia-noite). A função é idempotente no servidor.
+  React.useEffect(() => {
+    if (!session) return;
+    let vivo = true;
+    const rodar = () => {
+      rolloverPendente()
+        .then(() => {
+          if (!vivo) return;
+          queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+          queryClient.invalidateQueries({ queryKey: HISTORICO_QUERY_KEY });
+        })
+        .catch(() => {
+          /* silencioso: o pg_cron cobre o caminho normal */
+        });
+    };
+    rodar();
+    const id = window.setInterval(rodar, 15 * 60 * 1000);
+    return () => {
+      vivo = false;
+      window.clearInterval(id);
+    };
+  }, [session, queryClient]);
 
   const toggleItemMutation = useMutation({
     mutationFn: async ({ itemId, next }: { itemId: string; next: ItemStatus }) => {

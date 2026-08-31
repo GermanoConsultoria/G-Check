@@ -51,6 +51,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -95,6 +99,13 @@
 
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.985 0.003 285);
+
+  /* Estados do histórico de rotinas: verde = concluída, azul = hoje/andamento
+     (cinza = agendada usa --muted; vermelho = incompleta usa --destructive). */
+  --success: oklch(0.62 0.14 155);
+  --success-foreground: oklch(0.985 0.02 155);
+  --info: oklch(0.62 0.15 245);
+  --info-foreground: oklch(0.985 0.01 245);
 
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);

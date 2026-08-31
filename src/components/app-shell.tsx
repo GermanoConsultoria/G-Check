@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Building2,
+  History,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -23,6 +24,7 @@ type NavItem = {
 const navBase: readonly NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/checklists", label: "Checklists", icon: ListChecks, exact: false },
+  { to: "/historico", label: "Histórico", icon: History, exact: false },
 ];
 
 // Seção só de admin. As rotas também se autoprotegem (ver funcionarios.tsx /
