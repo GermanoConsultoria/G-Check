@@ -111,7 +111,7 @@ function Brand() {
         <span className="block text-base font-semibold tracking-tight text-sidebar-foreground">
           G-check
         </span>
-        <span className="block text-xs text-muted-foreground">Rotinas de supermercado</span>
+        <span className="block text-xs text-muted-foreground">Controle de Rotinas</span>
       </span>
     </div>
   );
