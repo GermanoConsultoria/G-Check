@@ -19,6 +19,8 @@ export interface ChecklistRow {
   horario: string;
   ativo: boolean;
   dias_semana: number[];
+  /** "HH:MM:SS" ou null — horário limite para concluir a rotina. */
+  tempo_limite: string | null;
 }
 
 export interface ChecklistItemRow {

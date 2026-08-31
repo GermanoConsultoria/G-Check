@@ -32,6 +32,7 @@ create table if not exists checklists (
   horario time not null,
   ativo boolean not null default true,
   dias_semana smallint[] not null default '{0,1,2,3,4,5,6}',
+  tempo_limite time,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -42,6 +43,9 @@ alter table checklists add column if not exists ativo boolean not null default t
 
 -- 'dias_semana' entrou depois (migration 20260831120000); mesma garantia.
 alter table checklists add column if not exists dias_semana smallint[] not null default '{0,1,2,3,4,5,6}';
+
+-- 'tempo_limite' entrou depois (migration 20260831160000).
+alter table checklists add column if not exists tempo_limite time;
 
 create table if not exists checklist_items (
   id text primary key,
@@ -588,8 +592,8 @@ on conflict (id) do nothing;
 -- ============================================================================
 /*
 -- checklists
-select 'insert into checklists (id,nome,setor,turno,horario,ativo,dias_semana) values '
-     || string_agg(format('(%L,%L,%L,%L,%L,%L,%L)', id, nome, setor, turno, horario, ativo, dias_semana), E',\n')
+select 'insert into checklists (id,nome,setor,turno,horario,ativo,dias_semana,tempo_limite) values '
+     || string_agg(format('(%L,%L,%L,%L,%L,%L,%L,%L)', id, nome, setor, turno, horario, ativo, dias_semana, tempo_limite), E',\n')
      || E'\non conflict (id) do nothing;'
 from checklists;
 

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertCircle,
+  AlertTriangle,
   Building2,
   CalendarCheck,
   CalendarOff,
@@ -80,7 +81,7 @@ function Metric({
   value: string;
   hint: string;
   icon: typeof Clock;
-  tone: "primary" | "warn" | "neutral";
+  tone: "primary" | "success" | "warn" | "danger" | "neutral";
   /** Se informado, o card vira um link para /checklists já com esse filtro. */
   search?: ChecklistSearch | undefined;
 }) {
@@ -93,7 +94,9 @@ function Metric({
           className={cn(
             "flex size-9 items-center justify-center rounded-xl",
             tone === "primary" && "bg-primary/12 text-primary",
+            tone === "success" && "bg-success/15 text-success",
             tone === "warn" && "bg-chart-4/20 text-chart-4",
+            tone === "danger" && "bg-destructive/15 text-destructive",
             tone === "neutral" && "bg-muted text-muted-foreground",
           )}
         >
@@ -158,26 +161,37 @@ function TarefasBreakdown({
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="truncate font-medium">{d.chave}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {d.pendentes > 0 ? (
+                {d.atrasados > 0 ? (
+                  <span className="font-medium text-destructive">
+                    {d.atrasados} atrasada{d.atrasados > 1 ? "s" : ""}
+                  </span>
+                ) : d.pendentes > 0 ? (
                   <span className="font-medium text-chart-4">
                     {d.pendentes} pendente{d.pendentes > 1 ? "s" : ""}
                   </span>
                 ) : (
-                  <span className="font-medium text-primary">em dia</span>
+                  <span className="font-medium text-success">em dia</span>
                 )}{" "}
                 · {d.total} {d.total === 1 ? rotuloItem : `${rotuloItem}s`}
               </span>
             </div>
-            {/* Barra 100% preenchida: cada linha se divide entre concluídas e
-                pendentes pela SUA própria contagem, sem comparar com as outras. */}
+            {/* Barra 100% preenchida: cada linha se divide entre concluídas
+                (verde), atrasadas (vermelho) e pendentes no prazo (âmbar) pela
+                SUA própria contagem, sem comparar com as outras. */}
             <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="bg-primary"
+                className="bg-success"
                 style={{ width: `${d.total ? (d.feitos / d.total) * 100 : 0}%` }}
               />
               <div
+                className="bg-destructive"
+                style={{ width: `${d.total ? (d.atrasados / d.total) * 100 : 0}%` }}
+              />
+              <div
                 className="bg-chart-4"
-                style={{ width: `${d.total ? (d.pendentes / d.total) * 100 : 0}%` }}
+                style={{
+                  width: `${d.total ? ((d.pendentes - d.atrasados) / d.total) * 100 : 0}%`,
+                }}
               />
             </div>
           </li>
@@ -328,10 +342,12 @@ function Dashboard() {
       acc.itens += p.total;
       acc.feitos += p.feitos;
       acc.pendentes += p.pendentes;
-      if (estado(c) === "concluido") acc.rotinasConcluidas += 1;
+      const e = estado(c);
+      if (e === "concluido") acc.rotinasConcluidas += 1;
+      if (e === "atrasada") acc.rotinasAtrasadas += 1;
       return acc;
     },
-    { itens: 0, feitos: 0, pendentes: 0, rotinasConcluidas: 0 },
+    { itens: 0, feitos: 0, pendentes: 0, rotinasConcluidas: 0, rotinasAtrasadas: 0 },
   );
 
   const taxa = totais.itens ? Math.round((totais.feitos / totais.itens) * 100) : 0;
@@ -363,21 +379,35 @@ function Dashboard() {
           )
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <Metric
             label="Pendências"
             value={String(totais.pendentes)}
             hint={hojeDesativado ? "rotinas pausadas hoje" : "itens aguardando execução"}
             icon={AlertCircle}
             tone="warn"
-            search={{ estados: ["pendente", "em_andamento"] }}
+            search={{ estados: ["pendente", "em_andamento", "atrasada"] }}
+          />
+          <Metric
+            label="Rotinas atrasadas"
+            value={String(totais.rotinasAtrasadas)}
+            hint={
+              hojeDesativado
+                ? "rotinas pausadas hoje"
+                : totais.rotinasAtrasadas > 0
+                  ? "passaram do tempo limite"
+                  : "dentro do tempo limite"
+            }
+            icon={AlertTriangle}
+            tone="danger"
+            search={{ estados: ["atrasada"] }}
           />
           <Metric
             label="Checklists concluídos"
             value={`${totais.rotinasConcluidas}/${visiveis.length}`}
             hint="rotinas finalizadas hoje"
             icon={CheckCircle2}
-            tone="primary"
+            tone="success"
             search={{ estados: ["concluido"] }}
           />
           <Metric
@@ -419,14 +449,16 @@ function Dashboard() {
                         <p className="truncate text-sm font-medium">{c.nome}</p>
                         <p className="text-xs text-muted-foreground">
                           {c.turno} · {c.horario}
+                          {c.tempoLimite && ` · até ${c.tempoLimite}`}
                         </p>
                       </div>
                       <Badge
                         variant="outline"
                         className={cn(
                           "shrink-0 border-transparent",
-                          e === "concluido" && "bg-primary/12 text-primary",
-                          e === "em_andamento" && "bg-chart-4/20 text-chart-4",
+                          e === "concluido" && "bg-success/15 text-success",
+                          e === "em_andamento" && "bg-info/15 text-info",
+                          e === "atrasada" && "bg-destructive/15 text-destructive",
                           e === "pendente" && "bg-muted text-muted-foreground",
                         )}
                       >

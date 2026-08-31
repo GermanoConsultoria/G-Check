@@ -60,7 +60,7 @@ import {
   type Turno,
 } from "@/lib/g-check-store";
 
-const ESTADOS_VALIDOS: ChecklistEstado[] = ["pendente", "em_andamento", "concluido"];
+const ESTADOS_VALIDOS: ChecklistEstado[] = ["pendente", "em_andamento", "atrasada", "concluido"];
 
 /**
  * Filtros (e o card a destacar) vêm pela URL — assim o dashboard pode linkar
@@ -128,6 +128,7 @@ export const Route = createFileRoute("/checklists")({
 const estadoOptions: { id: ChecklistEstado; label: string }[] = [
   { id: "pendente", label: "Não iniciados" },
   { id: "em_andamento", label: "Em andamento" },
+  { id: "atrasada", label: "Atrasadas" },
   { id: "concluido", label: "Concluídos" },
 ];
 
@@ -250,8 +251,9 @@ function EstadoBadge({ c }: { c: Checklist }) {
       variant="outline"
       className={cn(
         "border-transparent font-medium",
-        e === "concluido" && "bg-primary/12 text-primary",
+        e === "concluido" && "bg-success/15 text-success",
         e === "em_andamento" && "bg-chart-4/20 text-chart-4",
+        e === "atrasada" && "bg-destructive/15 text-destructive",
         e === "pendente" && "bg-muted text-muted-foreground",
       )}
     >
@@ -345,6 +347,7 @@ function ChecklistCard({
                 <span>{c.setor}</span>
                 <span className="inline-flex items-center gap-1">
                   <Clock className="size-3.5" /> {c.turno} · {c.horario}
+                  {c.tempoLimite && ` · até ${c.tempoLimite}`}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <CalendarDays className="size-3.5" /> {labelDiasSemana(c.diasSemana)}

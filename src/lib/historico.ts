@@ -107,6 +107,7 @@ export function montarHistorico(opts: {
         }));
     } else {
       const dow = cursor.getDay();
+      const agoraMin = new Date().getHours() * 60 + new Date().getMinutes();
       entradas = ativas
         .filter((c) => c.diasSemana.includes(dow))
         .slice()
@@ -114,8 +115,19 @@ export function montarHistorico(opts: {
         .map((c) => {
           const total = c.itens.length;
           const feitos = c.itens.filter((i) => i.status === "concluido").length;
+          const completo = total > 0 && feitos === total;
+          const limite = c.tempoLimite
+            ? Number(c.tempoLimite.slice(0, 2)) * 60 + Number(c.tempoLimite.slice(3, 5))
+            : null;
+          const atrasada = !completo && limite !== null && agoraMin > limite;
           const status: StatusHistorico =
-            iso > hojeISO ? "futura" : total > 0 && feitos === total ? "completa" : "hoje";
+            iso > hojeISO
+              ? "futura"
+              : completo
+                ? "completa"
+                : atrasada
+                  ? "incompleta"
+                  : "hoje";
           return {
             checklistId: c.id,
             nome: c.nome,

@@ -53,6 +53,8 @@ export interface Checklist {
   ativo: boolean;
   /** Índices de Date.getDay() (0 = domingo) em que a rotina deve rodar. */
   diasSemana: number[];
+  /** "HH:MM" — horário limite para concluir; passou dele e não terminou = "atrasada". */
+  tempoLimite?: string;
   itens: ChecklistItem[];
 }
 
@@ -71,6 +73,8 @@ export interface ChecklistInput {
   horario: string;
   ativo: boolean;
   diasSemana: number[];
+  /** "HH:MM" ou undefined. */
+  tempoLimite?: string;
   itens: ItemInput[];
 }
 
@@ -111,6 +115,7 @@ async function fetchChecklists(): Promise<Checklist[]> {
     horario: row.horario.slice(0, 5),
     ativo: row.ativo,
     diasSemana: [...(row.dias_semana ?? [])].sort((a, b) => a - b),
+    ...(row.tempo_limite ? { tempoLimite: row.tempo_limite.slice(0, 5) } : {}),
     itens: row.checklist_items.map((it) => ({
       id: it.id,
       titulo: it.titulo,
@@ -280,6 +285,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
         horario: input.horario,
         ativo: input.ativo,
         dias_semana: input.diasSemana,
+        tempo_limite: input.tempoLimite ?? null,
       });
       if (checklistError) throw checklistError;
 
@@ -356,6 +362,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
           horario: input.horario,
           ativo: input.ativo,
           dias_semana: input.diasSemana,
+          tempo_limite: input.tempoLimite ?? null,
         })
         .eq("id", checklistId);
       if (checklistError) throw checklistError;
@@ -462,7 +469,10 @@ export interface AgregadoTarefas {
   chave: string;
   total: number;
   feitos: number;
+  /** Todos os itens não concluídos (inclui os atrasados). */
   pendentes: number;
+  /** Subconjunto de "pendentes" cuja checklist já passou do tempo limite. */
+  atrasados: number;
 }
 
 /** Percorre os itens das checklists ativas somando por chave. */
@@ -473,19 +483,29 @@ function agregaTarefas(
   const mapa = new Map<string, AgregadoTarefas>();
   for (const c of checklists) {
     if (!c.ativo) continue;
+    const cAtrasada = estado(c) === "atrasada";
     for (const i of c.itens) {
       const chave = chaveDoItem(i, c).trim();
       if (!chave) continue;
-      const atual = mapa.get(chave) ?? { chave, total: 0, feitos: 0, pendentes: 0 };
+      const atual =
+        mapa.get(chave) ?? { chave, total: 0, feitos: 0, pendentes: 0, atrasados: 0 };
       atual.total += 1;
-      if (i.status === "concluido") atual.feitos += 1;
-      else atual.pendentes += 1;
+      if (i.status === "concluido") {
+        atual.feitos += 1;
+      } else {
+        atual.pendentes += 1;
+        if (cAtrasada) atual.atrasados += 1;
+      }
       mapa.set(chave, atual);
     }
   }
-  // Mais pendências primeiro; empata por volume total e depois nome.
+  // Mais atrasados primeiro, depois mais pendências; empata por volume e nome.
   return [...mapa.values()].sort(
-    (a, b) => b.pendentes - a.pendentes || b.total - a.total || a.chave.localeCompare(b.chave),
+    (a, b) =>
+      b.atrasados - a.atrasados ||
+      b.pendentes - a.pendentes ||
+      b.total - a.total ||
+      a.chave.localeCompare(b.chave),
   );
 }
 
@@ -506,16 +526,31 @@ export function resumoDe(agregados: AgregadoTarefas[], chave: string): AgregadoT
       total: 0,
       feitos: 0,
       pendentes: 0,
+      atrasados: 0,
     }
   );
 }
 
-export type ChecklistEstado = "concluido" | "em_andamento" | "pendente";
+export type ChecklistEstado = "concluido" | "em_andamento" | "pendente" | "atrasada";
 
-/** Deriva o estado da checklist a partir do progresso — não é um campo salvo no banco. */
-export function estado(c: Checklist): ChecklistEstado {
+/** Minutos desde a meia-noite de um "HH:MM" (ou de um Date). */
+function minutosDoDia(v: string | Date): number {
+  if (typeof v === "string") {
+    const [h, m] = v.split(":").map(Number);
+    return (h ?? 0) * 60 + (m ?? 0);
+  }
+  return v.getHours() * 60 + v.getMinutes();
+}
+
+/**
+ * Deriva o estado da checklist a partir do progresso — não é um campo salvo no
+ * banco. "atrasada": tem tempo_limite, já passou dele e a rotina não terminou.
+ * `agora` é injetável para testes; por padrão usa o relógio local.
+ */
+export function estado(c: Checklist, agora: Date = new Date()): ChecklistEstado {
   const { feitos, total } = progresso(c);
   if (total > 0 && feitos === total) return "concluido";
+  if (c.tempoLimite && minutosDoDia(agora) > minutosDoDia(c.tempoLimite)) return "atrasada";
   if (feitos === 0) return "pendente";
   return "em_andamento";
 }
@@ -524,6 +559,7 @@ export const estadoLabel: Record<ChecklistEstado, string> = {
   concluido: "Concluído",
   em_andamento: "Em andamento",
   pendente: "Não iniciado",
+  atrasada: "Atrasada",
 };
 
 /** Compara o responsável do item com o nome de perfil informado (ignora caixa e espaços). */

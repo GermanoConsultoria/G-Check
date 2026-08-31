@@ -50,15 +50,21 @@ const itemSchema = z.object({
   responsavel: z.string().trim().min(1, "Informe o responsável."),
 });
 
-const checklistSchema = z.object({
-  nome: z.string().trim().min(1, "Informe o nome da checklist."),
-  setor: z.string().trim().min(1, "Informe o setor."),
-  turno: z.enum(turnos, { message: "Selecione o turno." }),
-  horario: z.string().trim().min(1, "Informe o horário."),
-  diasSemana: z.array(z.number()).min(1, "Selecione ao menos um dia da semana."),
-  ativo: z.boolean(),
-  itens: z.array(itemSchema).min(1, "Adicione ao menos um item."),
-});
+const checklistSchema = z
+  .object({
+    nome: z.string().trim().min(1, "Informe o nome da checklist."),
+    setor: z.string().trim().min(1, "Informe o setor."),
+    turno: z.enum(turnos, { message: "Selecione o turno." }),
+    horario: z.string().trim().min(1, "Informe o horário."),
+    tempoLimite: z.string().trim(),
+    diasSemana: z.array(z.number()).min(1, "Selecione ao menos um dia da semana."),
+    ativo: z.boolean(),
+    itens: z.array(itemSchema).min(1, "Adicione ao menos um item."),
+  })
+  .refine((v) => !v.tempoLimite || !v.horario || v.tempoLimite >= v.horario, {
+    message: "O tempo limite deve ser igual ou depois do horário de início.",
+    path: ["tempoLimite"],
+  });
 
 type ChecklistFormValues = z.infer<typeof checklistSchema>;
 
@@ -77,6 +83,7 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
       setor: "",
       turno: turnos[0],
       horario: "",
+      tempoLimite: "",
       diasSemana: [...todosOsDias],
       ativo: true,
       itens: [itemVazio],
@@ -87,6 +94,7 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
     setor: checklist.setor,
     turno: turnoOuPadrao(checklist.turno),
     horario: checklist.horario,
+    tempoLimite: checklist.tempoLimite ?? "",
     diasSemana:
       checklist.diasSemana.length > 0 ? [...checklist.diasSemana] : [...todosOsDias],
     ativo: checklist.ativo,
@@ -148,6 +156,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
       horario: values.horario,
       ativo: values.ativo,
       diasSemana: [...values.diasSemana].sort((a, b) => a - b),
+      ...(values.tempoLimite.trim() ? { tempoLimite: values.tempoLimite.trim() } : {}),
       itens,
     };
     if (editando && checklist) {
@@ -244,6 +253,22 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
                     <FormControl>
                       <Input type="time" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="tempoLimite"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tempo limite (opcional)</FormLabel>
+                    <FormControl>
+                      <Input type="time" {...field} />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      Passou daqui sem concluir, a rotina fica “Atrasada”.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
