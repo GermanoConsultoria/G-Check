@@ -1,21 +1,33 @@
 import * as React from "react";
-import { ArrowLeft, CalendarDays, Clock } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { dataDoIso, isoDoDia } from "@/lib/utils";
+import { cn, dataDoIso, isoDoDia } from "@/lib/utils";
 import type { Checklist } from "@/lib/g-check-store";
 
-const fmtLongo = new Intl.DateTimeFormat("pt-BR", {
-  weekday: "long",
-  day: "2-digit",
-  month: "long",
-});
+const fmtMes = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
+const CABECALHO = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+function capitalizar(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Grade do mês: começa no domingo antes do dia 1 e vai até fechar a última
+ * semana, então cada célula (inclusive as de "fora do mês") é um Date real.
+ */
+function celulasDoMes(ref: Date): Date[] {
+  const ano = ref.getFullYear();
+  const mes = ref.getMonth();
+  const offset = new Date(ano, mes, 1).getDay();
+  const totalDias = new Date(ano, mes + 1, 0).getDate();
+  const totalCelulas = Math.ceil((offset + totalDias) / 7) * 7;
+  return Array.from({ length: totalCelulas }, (_, i) => new Date(ano, mes, i - offset + 1));
+}
 
 /**
  * Rotinas ativas que caem no dia da semana desta data, ordenadas por horário.
- * As tarefas não têm data própria — o agendamento vive em checklist.diasSemana —
- * então "dia com tarefas" = existe rotina ativa para aquele dia da semana.
+ * As tarefas não têm data própria — o agendamento vive em checklist.diasSemana.
  */
 function rotinasDoDia(checklists: Checklist[], date: Date): Checklist[] {
   const dow = date.getDay();
@@ -25,9 +37,9 @@ function rotinasDoDia(checklists: Checklist[], date: Date): Checklist[] {
 }
 
 /**
- * Tela de calendário da página /checklists (renderiza no <main>, mantendo header
- * e sidebar). Marca os dias que têm rotinas agendadas, mostra as rotinas do dia
- * selecionado e leva para a lista já filtrada por aquele dia.
+ * Tela de calendário da página /checklists (renderiza no <main>, header e sidebar
+ * seguem). Grade mensal com células grandes: cada dia mostra as rotinas
+ * agendadas; clicar num dia abre a lista já filtrada por aquele dia.
  */
 export function CalendarioChecklists({
   checklists,
@@ -40,73 +52,135 @@ export function CalendarioChecklists({
   onVoltar: () => void;
   onAbrirDia: (iso: string) => void;
 }) {
-  const hoje = React.useMemo(() => new Date(), []);
-  const [selecionado, setSelecionado] = React.useState<Date>(
-    diaInicial ? dataDoIso(diaInicial) : hoje,
-  );
+  const hojeISO = isoDoDia(new Date());
+  const alvoISO = diaInicial ?? hojeISO;
+  const hoje = dataDoIso(hojeISO);
 
-  const rotinas = rotinasDoDia(checklists, selecionado);
+  const [mesRef, setMesRef] = React.useState(() => {
+    const base = dataDoIso(alvoISO);
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  const celulas = React.useMemo(() => celulasDoMes(mesRef), [mesRef]);
+  const noMesDeHoje =
+    mesRef.getFullYear() === hoje.getFullYear() && mesRef.getMonth() === hoje.getMonth();
+
+  // Rola até o dia-alvo (hoje ou o dia que já vinha filtrado) ao abrir / trocar de mês.
+  const alvoRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    alvoRef.current?.scrollIntoView({ block: "center" });
+  }, [mesRef]);
+
+  function mudarMes(delta: number) {
+    setMesRef((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
+  }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <Button variant="ghost" size="sm" className="gap-2" onClick={onVoltar}>
-        <ArrowLeft className="size-4" />
-        Voltar para a lista
-      </Button>
+    <div className="mx-auto max-w-5xl space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button variant="ghost" size="sm" className="gap-2" onClick={onVoltar}>
+          <ArrowLeft className="size-4" />
+          Voltar para a lista
+        </Button>
 
-      <div className="grid gap-5 md:grid-cols-[auto_1fr]">
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <Calendar
-            mode="single"
-            selected={selecionado}
-            defaultMonth={selecionado}
-            onSelect={(date) => date && setSelecionado(date)}
-            showOutsideDays
-            className="[--cell-size:2.6rem]"
-            modifiers={{ temTarefas: (date) => rotinasDoDia(checklists, date).length > 0 }}
-            modifiersClassNames={{
-              temTarefas:
-                "after:pointer-events-none after:absolute after:bottom-1.5 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-primary aria-selected:after:bg-primary-foreground",
-            }}
-          />
-          <div className="mt-2 flex items-center gap-1.5 border-t border-border px-1 pt-3 text-xs text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-primary" />
-            Dias com rotinas agendadas
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <p className="text-sm font-semibold capitalize">{fmtLongo.format(selecionado)}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {rotinas.length === 0
-              ? "Nenhuma rotina neste dia"
-              : `${rotinas.length} ${rotinas.length === 1 ? "rotina" : "rotinas"}`}
-          </p>
-
-          {rotinas.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {rotinas.map((c) => (
-                <li key={c.id} className="rounded-xl border border-border px-3 py-2.5 text-sm">
-                  <p className="font-medium">{c.nome}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span>{c.setor}</span>
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="size-3.5" /> {c.turno} · {c.horario}
-                    </span>
-                  </p>
-                </li>
-              ))}
-            </ul>
+        <div className="flex items-center gap-1.5">
+          {!noMesDeHoje && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMesRef(new Date(hoje.getFullYear(), hoje.getMonth(), 1))}
+            >
+              Hoje
+            </Button>
           )}
-
           <Button
-            className="mt-5 w-full gap-2"
-            disabled={rotinas.length === 0}
-            onClick={() => onAbrirDia(isoDoDia(selecionado))}
+            variant="outline"
+            size="icon"
+            className="size-8"
+            onClick={() => mudarMes(-1)}
+            aria-label="Mês anterior"
           >
-            <CalendarDays className="size-4" />
-            Ver tarefas deste dia
+            <ChevronLeft className="size-4" />
           </Button>
+          <span className="min-w-40 text-center text-sm font-semibold capitalize">
+            {capitalizar(fmtMes.format(mesRef))}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            onClick={() => mudarMes(1)}
+            aria-label="Próximo mês"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[900px] overflow-hidden rounded-2xl border border-border">
+          <div className="grid grid-cols-7 gap-px bg-border">
+            {CABECALHO.map((d) => (
+              <div
+                key={d}
+                className="bg-card px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              >
+                {d}
+              </div>
+            ))}
+
+            {celulas.map((d) => {
+              const iso = isoDoDia(d);
+              const rotinas = rotinasDoDia(checklists, d);
+              const doMes = d.getMonth() === mesRef.getMonth();
+              const ehHoje = iso === hojeISO;
+              const ehAlvo = iso === alvoISO;
+              const visiveis = rotinas.slice(0, 3);
+              const resto = rotinas.length - visiveis.length;
+              return (
+                <button
+                  key={iso}
+                  ref={ehAlvo ? alvoRef : undefined}
+                  onClick={() => onAbrirDia(iso)}
+                  className={cn(
+                    "flex min-h-36 flex-col gap-1.5 bg-card p-2 text-left align-top transition-colors hover:bg-muted/50",
+                    !doMes && "bg-muted/20",
+                    ehAlvo && !ehHoje && "bg-primary/5",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
+                      ehHoje
+                        ? "bg-primary text-primary-foreground"
+                        : doMes
+                          ? "text-foreground"
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {d.getDate()}
+                  </span>
+
+                  <div className="flex min-w-0 flex-col gap-1">
+                    {visiveis.map((c) => (
+                      <span
+                        key={c.id}
+                        title={`${c.nome} — ${c.turno} · ${c.horario} · ${c.setor}`}
+                        className="truncate rounded-md bg-primary/10 px-1.5 py-1 text-xs font-medium text-primary"
+                      >
+                        {c.horario} {c.nome}
+                      </span>
+                    ))}
+                    {resto > 0 && (
+                      <span className="px-1.5 text-xs text-muted-foreground">
+                        +{resto} {resto > 1 ? "rotinas" : "rotina"}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
