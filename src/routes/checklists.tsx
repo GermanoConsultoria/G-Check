@@ -1,8 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
-import { Check, ChevronDown, Clock, Filter, RotateCcw, Trash2, User, X } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Clock,
+  Filter,
+  RotateCcw,
+  Trash2,
+  User,
+  X,
+} from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { EditarChecklistDialog, NovaChecklistDialog } from "@/components/checklist-form-dialog";
+import { CalendarioChecklists } from "@/components/calendario-checklists";
+import { SeletorDia } from "@/components/seletor-dia";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,12 +37,13 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
+import { cn, dataDoIso } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
 import {
   ehResponsavel,
   estado,
   estadoLabel,
+  labelDiasSemana,
   progresso,
   turnos,
   useGCheck,
@@ -51,6 +64,10 @@ export interface ChecklistSearch {
   turnos?: Turno[] | undefined;
   /** id da checklist que deve abrir expandida e receber scroll ao entrar na página. */
   checklist?: string | undefined;
+  /** dia (ISO "yyyy-MM-dd") escolhido no seletor "Hoje": filtra pelas rotinas daquele dia da semana. */
+  dia?: string | undefined;
+  /** "calendario" troca o conteúdo do <main> pela tela de calendário (header/sidebar seguem). */
+  vista?: "calendario" | undefined;
 }
 
 export const Route = createFileRoute("/checklists")({
@@ -73,6 +90,8 @@ export const Route = createFileRoute("/checklists")({
     const rawEstados = search["estados"];
     const rawTurnos = search["turnos"];
     const rawChecklist = search["checklist"];
+    const rawDia = search["dia"];
+    const rawVista = search["vista"];
 
     const estados = Array.isArray(rawEstados)
       ? rawEstados.filter((e): e is ChecklistEstado =>
@@ -83,11 +102,16 @@ export const Route = createFileRoute("/checklists")({
       ? rawTurnos.filter((t): t is Turno => (turnos as readonly string[]).includes(t as string))
       : undefined;
     const checklist = typeof rawChecklist === "string" ? rawChecklist : undefined;
+    const dia =
+      typeof rawDia === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDia) ? rawDia : undefined;
+    const vista = rawVista === "calendario" ? "calendario" : undefined;
 
     return {
       ...(estados && estados.length ? { estados } : {}),
       ...(turnosSearch && turnosSearch.length ? { turnos: turnosSearch } : {}),
       ...(checklist ? { checklist } : {}),
+      ...(dia ? { dia } : {}),
+      ...(vista ? { vista } : {}),
     };
   },
   component: ChecklistsPage,
@@ -302,6 +326,9 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
                 <span className="inline-flex items-center gap-1">
                   <Clock className="size-3.5" /> {c.turno} · {c.horario}
                 </span>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="size-3.5" /> {labelDiasSemana(c.diasSemana)}
+                </span>
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -416,7 +443,13 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
-  const { estados, turnos: turnosSearch, checklist: checklistDestaque } = Route.useSearch();
+  const {
+    estados,
+    turnos: turnosSearch,
+    checklist: checklistDestaque,
+    dia,
+    vista,
+  } = Route.useSearch();
   const navigate = Route.useNavigate();
 
   const estadosSelecionados = React.useMemo(() => estados ?? [], [estados]);
@@ -452,6 +485,28 @@ function ChecklistsPage() {
     navigate({ search: (prev) => ({ ...prev, estados: undefined, turnos: undefined }) });
   }, [navigate]);
 
+  const selecionarDia = React.useCallback(
+    (iso: string | undefined) => {
+      navigate({ search: (prev) => ({ ...prev, dia: iso || undefined }) });
+    },
+    [navigate],
+  );
+
+  const abrirCalendario = React.useCallback(() => {
+    navigate({ search: (prev) => ({ ...prev, vista: "calendario" }) });
+  }, [navigate]);
+
+  const fecharCalendario = React.useCallback(() => {
+    navigate({ search: (prev) => ({ ...prev, vista: undefined }) });
+  }, [navigate]);
+
+  const abrirDia = React.useCallback(
+    (iso: string) => {
+      navigate({ search: (prev) => ({ ...prev, dia: iso, vista: undefined }) });
+    },
+    [navigate],
+  );
+
   if (isLoading) {
     return (
       <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
@@ -472,23 +527,49 @@ function ChecklistsPage() {
     ? checklists
     : checklists.filter((c) => c.ativo && c.itens.some((i) => ehResponsavel(i, profile?.nome)));
 
+  if (vista === "calendario") {
+    return (
+      <AppShell title="Checklists" subtitle="Calendário de rotinas">
+        <CalendarioChecklists
+          checklists={minhasChecklists}
+          diaInicial={dia}
+          onVoltar={fecharCalendario}
+          onAbrirDia={abrirDia}
+        />
+      </AppShell>
+    );
+  }
+
+  // "?dia=" traz um dia específico do calendário; como as tarefas só têm dia da
+  // semana (checklist.diasSemana), o filtro casa pelo getDay() daquela data.
+  const diaSemanaAlvo = dia ? dataDoIso(dia).getDay() : null;
+
   const lista = minhasChecklists.filter(
     (c) =>
       (estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c))) &&
-      (turnosSelecionados.length === 0 || turnosSelecionados.includes(c.turno as Turno)),
+      (turnosSelecionados.length === 0 || turnosSelecionados.includes(c.turno as Turno)) &&
+      (diaSemanaAlvo === null || c.diasSemana.includes(diaSemanaAlvo)),
   );
 
   return (
     <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
       <div className="mx-auto max-w-4xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <FiltrosChecklist
-            estadosSelecionados={estadosSelecionados}
-            turnosSelecionados={turnosSelecionados}
-            onToggleEstado={toggleEstado}
-            onToggleTurno={toggleTurno}
-            onLimpar={limparFiltros}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <FiltrosChecklist
+              estadosSelecionados={estadosSelecionados}
+              turnosSelecionados={turnosSelecionados}
+              onToggleEstado={toggleEstado}
+              onToggleTurno={toggleTurno}
+              onLimpar={limparFiltros}
+            />
+            <SeletorDia
+              diaSelecionado={dia}
+              onSelectDia={selecionarDia}
+              onVerCalendario={abrirCalendario}
+              checklists={minhasChecklists}
+            />
+          </div>
           {isAdmin && <NovaChecklistDialog />}
         </div>
 
@@ -498,7 +579,9 @@ function ChecklistsPage() {
           ))}
           {lista.length === 0 && (
             <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              Nenhuma rotina neste estado.
+              {diaSemanaAlvo !== null
+                ? "Nenhuma rotina para o dia escolhido."
+                : "Nenhuma rotina neste estado."}
             </p>
           )}
         </div>

@@ -9,6 +9,32 @@ export type ItemStatus = "pendente" | "concluido";
 export const turnos = ["Manhã", "Tarde", "Noite"] as const;
 export type Turno = (typeof turnos)[number];
 
+/**
+ * Dias da semana em que a rotina roda. O valor é o índice JS de Date.getDay()
+ * (0 = domingo … 6 = sábado); "inicial" é o rótulo do botão no formulário,
+ * na ordem D S T Q Q S S.
+ */
+export const diasDaSemana = [
+  { valor: 0, inicial: "D", nome: "Domingo" },
+  { valor: 1, inicial: "S", nome: "Segunda" },
+  { valor: 2, inicial: "T", nome: "Terça" },
+  { valor: 3, inicial: "Q", nome: "Quarta" },
+  { valor: 4, inicial: "Q", nome: "Quinta" },
+  { valor: 5, inicial: "S", nome: "Sexta" },
+  { valor: 6, inicial: "S", nome: "Sábado" },
+] as const;
+
+export const todosOsDias = diasDaSemana.map((d) => d.valor);
+
+/** Rótulo curto dos dias agendados para exibir nas cards. */
+export function labelDiasSemana(dias: number[]): string {
+  const ordenados = [...dias].sort((a, b) => a - b);
+  if (ordenados.length === 0) return "Nenhum dia";
+  if (ordenados.length === 7) return "Todos os dias";
+  if (ordenados.join(",") === "1,2,3,4,5") return "Seg a sex";
+  return ordenados.map((v) => diasDaSemana[v]?.inicial ?? "?").join(" · ");
+}
+
 export interface ChecklistItem {
   id: string;
   titulo: string;
@@ -24,6 +50,8 @@ export interface Checklist {
   turno: string;
   horario: string;
   ativo: boolean;
+  /** Índices de Date.getDay() (0 = domingo) em que a rotina deve rodar. */
+  diasSemana: number[];
   itens: ChecklistItem[];
 }
 
@@ -41,6 +69,7 @@ export interface ChecklistInput {
   turno: string;
   horario: string;
   ativo: boolean;
+  diasSemana: number[];
   itens: ItemInput[];
 }
 
@@ -80,6 +109,7 @@ async function fetchChecklists(): Promise<Checklist[]> {
     turno: row.turno,
     horario: row.horario.slice(0, 5),
     ativo: row.ativo,
+    diasSemana: [...(row.dias_semana ?? [])].sort((a, b) => a - b),
     itens: row.checklist_items.map((it) => ({
       id: it.id,
       titulo: it.titulo,
@@ -223,6 +253,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
         turno: input.turno,
         horario: input.horario,
         ativo: input.ativo,
+        dias_semana: input.diasSemana,
       });
       if (checklistError) throw checklistError;
 
@@ -298,6 +329,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
           turno: input.turno,
           horario: input.horario,
           ativo: input.ativo,
+          dias_semana: input.diasSemana,
         })
         .eq("id", checklistId);
       if (checklistError) throw checklistError;

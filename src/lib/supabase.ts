@@ -18,6 +18,7 @@ export interface ChecklistRow {
   turno: string;
   horario: string;
   ativo: boolean;
+  dias_semana: number[];
 }
 
 export interface ChecklistItemRow {

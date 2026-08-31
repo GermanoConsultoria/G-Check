@@ -33,8 +33,15 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { turnos, useGCheck, type Checklist } from "@/lib/g-check-store";
+import {
+  diasDaSemana,
+  todosOsDias,
+  turnos,
+  useGCheck,
+  type Checklist,
+} from "@/lib/g-check-store";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
+import { cn } from "@/lib/utils";
 
 const itemSchema = z.object({
   itemId: z.string().optional(),
@@ -48,6 +55,7 @@ const checklistSchema = z.object({
   setor: z.string().trim().min(1, "Informe o setor."),
   turno: z.enum(turnos, { message: "Selecione o turno." }),
   horario: z.string().trim().min(1, "Informe o horário."),
+  diasSemana: z.array(z.number()).min(1, "Selecione ao menos um dia da semana."),
   ativo: z.boolean(),
   itens: z.array(itemSchema).min(1, "Adicione ao menos um item."),
 });
@@ -69,6 +77,7 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
       setor: "",
       turno: turnos[0],
       horario: "",
+      diasSemana: [...todosOsDias],
       ativo: true,
       itens: [itemVazio],
     };
@@ -78,6 +87,8 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
     setor: checklist.setor,
     turno: turnoOuPadrao(checklist.turno),
     horario: checklist.horario,
+    diasSemana:
+      checklist.diasSemana.length > 0 ? [...checklist.diasSemana] : [...todosOsDias],
     ativo: checklist.ativo,
     itens: checklist.itens.map((i) => ({
       itemId: i.id,
@@ -136,6 +147,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
       turno: values.turno,
       horario: values.horario,
       ativo: values.ativo,
+      diasSemana: [...values.diasSemana].sort((a, b) => a - b),
       itens,
     };
     if (editando && checklist) {
@@ -231,6 +243,47 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
                     <FormLabel>Horário</FormLabel>
                     <FormControl>
                       <Input type="time" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="diasSemana"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Dias da semana</FormLabel>
+                    <FormControl>
+                      <div className="flex flex-wrap gap-2">
+                        {diasDaSemana.map((dia) => {
+                          const selecionado = field.value.includes(dia.valor);
+                          return (
+                            <button
+                              key={dia.valor}
+                              type="button"
+                              onClick={() =>
+                                field.onChange(
+                                  selecionado
+                                    ? field.value.filter((v: number) => v !== dia.valor)
+                                    : [...field.value, dia.valor].sort((a, b) => a - b),
+                                )
+                              }
+                              aria-pressed={selecionado}
+                              aria-label={dia.nome}
+                              title={dia.nome}
+                              className={cn(
+                                "flex size-9 items-center justify-center rounded-full border text-sm font-medium transition-colors",
+                                selecionado
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-input text-muted-foreground hover:border-primary hover:text-foreground",
+                              )}
+                            >
+                              {dia.inicial}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
