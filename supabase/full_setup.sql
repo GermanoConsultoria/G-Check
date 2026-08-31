@@ -70,6 +70,14 @@ create table if not exists setores (
   updated_at timestamptz not null default now()
 );
 
+-- Feriado / dia sem expediente (migration 20260831130000): enquanto a data de
+-- hoje estiver aqui, o dashboard não cobra as pendências do dia. Reversível.
+create table if not exists dias_desativados (
+  data date primary key,
+  criado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   nome text not null,
@@ -192,6 +200,33 @@ create trigger checklist_items_restrict_funcionario_update
   before update on checklist_items
   for each row execute function public.checklist_items_restrict_funcionario_update();
 
+-- Dia desativado (feriado): enquanto current_date estiver em dias_desativados,
+-- funcionário não muda status de item nenhum. Admin passa (pode reativar o dia).
+-- (migration 20260831140000)
+create or replace function public.checklist_items_block_on_disabled_day()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_admin() then
+    return new;
+  end if;
+
+  if exists (select 1 from public.dias_desativados where data = current_date) then
+    raise exception 'As rotinas de hoje estão desativadas. Fale com o administrador.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists checklist_items_block_on_disabled_day on checklist_items;
+create trigger checklist_items_block_on_disabled_day
+  before update on checklist_items
+  for each row execute function public.checklist_items_block_on_disabled_day();
+
 
 -- ============================================================================
 -- 3. RLS (políticas)
@@ -201,6 +236,7 @@ alter table checklists enable row level security;
 alter table checklist_items enable row level security;
 alter table profiles enable row level security;
 alter table setores enable row level security;
+alter table dias_desativados enable row level security;
 
 -- Limpa qualquer política anterior (inclui o "anon full access" da 1ª migration,
 -- que liberava acesso sem login).
@@ -303,6 +339,26 @@ create policy "admin atualiza setores"
 
 create policy "admin remove setores"
   on setores for delete
+  to authenticated
+  using (is_admin());
+
+-- dias_desativados: todo autenticado lê; só admin desativa/reativa um dia.
+drop policy if exists "autenticados veem dias desativados" on dias_desativados;
+drop policy if exists "admin desativa dia" on dias_desativados;
+drop policy if exists "admin reativa dia" on dias_desativados;
+
+create policy "autenticados veem dias desativados"
+  on dias_desativados for select
+  to authenticated
+  using (true);
+
+create policy "admin desativa dia"
+  on dias_desativados for insert
+  to authenticated
+  with check (is_admin());
+
+create policy "admin reativa dia"
+  on dias_desativados for delete
   to authenticated
   using (is_admin());
 

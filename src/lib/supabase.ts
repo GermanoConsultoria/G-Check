@@ -36,3 +36,10 @@ export interface SetorRow {
   nome: string;
   descricao: string | null;
 }
+
+export interface DiaDesativadoRow {
+  /** ISO "yyyy-MM-dd" (tipo date do Postgres). */
+  data: string;
+  criado_por: string | null;
+  created_at: string;
+}

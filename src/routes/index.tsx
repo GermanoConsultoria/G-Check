@@ -1,7 +1,12 @@
+import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   AlertCircle,
   Building2,
+  CalendarCheck,
+  CalendarOff,
   CheckCircle2,
   Clock,
   ListChecks,
@@ -10,11 +15,28 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import type { ChecklistSearch } from "@/routes/checklists";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
+import {
+  desativarDia,
+  DIAS_DESATIVADOS_QUERY_KEY,
+  reativarDia,
+  useHojeDesativado,
+} from "@/lib/dias-desativados";
 import {
   ehResponsavel,
   estado,
@@ -168,9 +190,103 @@ function TarefasBreakdown({
   );
 }
 
+/**
+ * Faixa no topo do dashboard (admin) para pausar/retomar as rotinas do dia —
+ * usada em feriados e dias sem expediente. Desativar pede confirmação; enquanto
+ * o dia está pausado, o dashboard zera as pendências e o botão vira "Reativar".
+ * Nenhuma checklist é alterada — só a data entra/sai de `dias_desativados`.
+ */
+function PausaRotinasHoje({ hojeISO, desativado }: { hojeISO: string; desativado: boolean }) {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const [enviando, setEnviando] = React.useState(false);
+
+  async function alternar(reativar: boolean) {
+    setEnviando(true);
+    try {
+      if (reativar) {
+        await reativarDia(hojeISO);
+        toast.success("Rotinas de hoje reativadas.");
+      } else {
+        await desativarDia(hojeISO, session?.user.id ?? null);
+        toast.success("Rotinas de hoje desativadas.");
+      }
+      queryClient.invalidateQueries({ queryKey: DIAS_DESATIVADOS_QUERY_KEY });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (desativado) {
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-chart-4/30 bg-chart-4/10 p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-chart-4/20 text-chart-4">
+            <CalendarOff className="size-4.5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Rotinas de hoje desativadas</p>
+            <p className="text-xs text-muted-foreground">
+              As pendências do dia não estão sendo cobradas. Reative quando o expediente
+              voltar ao normal.
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={enviando}
+          onClick={() => alternar(true)}
+        >
+          {enviando ? "Reativando…" : "Reativar rotinas de hoje"}
+        </Button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <CalendarCheck className="size-4.5" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold">Rotinas de hoje ativas</p>
+          <p className="text-xs text-muted-foreground">
+            Em feriados ou dias sem expediente, desative para não cobrar as pendências do dia.
+          </p>
+        </div>
+      </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button size="sm" variant="outline" disabled={enviando}>
+            Desativar rotinas de hoje
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deseja realmente desativar as rotinas de hoje?</AlertDialogTitle>
+            <AlertDialogDescription>
+              As rotinas de hoje deixam de ser cobradas no painel enquanto estiverem
+              desativadas. Nenhuma checklist é apagada — você pode reativar a qualquer momento.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => alternar(false)}>Desativar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  );
+}
+
 function Dashboard() {
   const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
+  const { hojeISO, hojeDesativado } = useHojeDesativado();
 
   const subtitle = isAdmin
     ? "Resumo do dia — Loja Centro"
@@ -197,11 +313,14 @@ function Dashboard() {
   // Admin vê todas as checklists ativas por inteiro. Funcionário vê versões
   // "recortadas": cada checklist mostra só os itens atribuídos a ele, e a
   // checklist inteira some se nenhum item dela for dele (evita "cascas vazias").
-  const visiveis: Checklist[] = isAdmin
+  const doDia: Checklist[] = isAdmin
     ? ativas
     : ativas
         .map((c) => ({ ...c, itens: c.itens.filter((i) => ehResponsavel(i, profile?.nome)) }))
         .filter((c) => c.itens.length > 0);
+  // Dia pausado (feriado): nada é cobrado hoje — o dashboard calcula como se não
+  // houvesse rotina ativa. Ver PausaRotinasHoje / tabela dias_desativados.
+  const visiveis: Checklist[] = hojeDesativado ? [] : doDia;
 
   const totais = visiveis.reduce(
     (acc, c) => {
@@ -222,17 +341,33 @@ function Dashboard() {
 
   // Distribuição das tarefas (itens) por responsável e por setor — só faz
   // sentido para o admin, que enxerga todas as checklists ativas.
-  const porFuncionario = isAdmin ? tarefasPorFuncionario(checklists) : [];
-  const porSetor = isAdmin ? tarefasPorSetor(checklists) : [];
+  const porFuncionario = isAdmin && !hojeDesativado ? tarefasPorFuncionario(checklists) : [];
+  const porSetor = isAdmin && !hojeDesativado ? tarefasPorSetor(checklists) : [];
 
   return (
     <AppShell title="Dashboard" subtitle={subtitle}>
       <div className="mx-auto max-w-5xl space-y-6">
+        {isAdmin ? (
+          <PausaRotinasHoje hojeISO={hojeISO} desativado={hojeDesativado} />
+        ) : (
+          hojeDesativado && (
+            <section className="flex items-center gap-3 rounded-2xl border border-chart-4/30 bg-chart-4/10 p-4">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-chart-4/20 text-chart-4">
+                <CalendarOff className="size-4.5" />
+              </span>
+              <p className="text-sm">
+                As rotinas de hoje foram pausadas pelo administrador (feriado ou dia sem
+                expediente).
+              </p>
+            </section>
+          )
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Metric
             label="Pendências"
             value={String(totais.pendentes)}
-            hint="itens aguardando execução"
+            hint={hojeDesativado ? "rotinas pausadas hoje" : "itens aguardando execução"}
             icon={AlertCircle}
             tone="warn"
             search={{ estados: ["pendente", "em_andamento"] }}
@@ -304,11 +439,13 @@ function Dashboard() {
               })}
               {visiveis.length === 0 && (
                 <li className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
-                  {isAdmin
-                    ? inativas > 0
-                      ? "Nenhuma rotina ativa no momento."
-                      : "Nenhuma rotina cadastrada."
-                    : "Nenhuma rotina com itens atribuídos a você no momento."}
+                  {hojeDesativado
+                    ? "Rotinas de hoje pausadas — nenhuma cobrança de pendências."
+                    : isAdmin
+                      ? inativas > 0
+                        ? "Nenhuma rotina ativa no momento."
+                        : "Nenhuma rotina cadastrada."
+                      : "Nenhuma rotina com itens atribuídos a você no momento."}
                 </li>
               )}
             </ul>
@@ -337,6 +474,11 @@ function Dashboard() {
               {pendencias.length === 0 && visiveis.length > 0 && (
                 <li className="rounded-xl bg-primary/10 p-4 text-sm text-primary">
                   Todas as rotinas do dia estão concluídas.
+                </li>
+              )}
+              {hojeDesativado && (
+                <li className="rounded-xl bg-chart-4/10 p-4 text-sm text-chart-4">
+                  Rotinas de hoje pausadas. As pendências voltam a ser cobradas ao reativar.
                 </li>
               )}
             </ul>

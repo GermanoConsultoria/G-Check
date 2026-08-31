@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   CalendarDays,
+  CalendarOff,
   Check,
   ChevronDown,
   Clock,
@@ -39,6 +42,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Progress } from "@/components/ui/progress";
 import { cn, dataDoIso } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
+import {
+  DIAS_DESATIVADOS_QUERY_KEY,
+  reativarDia,
+  useHojeDesativado,
+} from "@/lib/dias-desativados";
 import {
   ehResponsavel,
   estado,
@@ -290,12 +298,23 @@ function ExcluirChecklistButton({ c }: { c: Checklist }) {
   );
 }
 
-function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boolean | undefined }) {
+function ChecklistCard({
+  c,
+  destacar = false,
+  travado = false,
+}: {
+  c: Checklist;
+  destacar?: boolean | undefined;
+  /** Dia pausado (feriado): itens não podem ser marcados/concluídos/reabertos. */
+  travado?: boolean | undefined;
+}) {
   const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
   const [aberto, setAberto] = React.useState(destacar);
   const sectionRef = React.useRef<HTMLElement>(null);
   const p = progresso(c);
+  // Dia pausado: a rotina não abre — o card fica só com o cabeçalho.
+  const expandido = aberto && !travado;
 
   // Chegou pela URL "?checklist=<id>" (link de uma pendência no dashboard):
   // rola até a card e a deixa expandida.
@@ -315,8 +334,9 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
       <div className="flex items-start gap-2 p-5">
         <button
           onClick={() => setAberto((v) => !v)}
-          className="flex min-w-0 flex-1 flex-col gap-4 text-left"
-          aria-expanded={aberto}
+          disabled={travado}
+          className="flex min-w-0 flex-1 flex-col gap-4 text-left disabled:cursor-not-allowed"
+          aria-expanded={expandido}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -341,12 +361,14 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
                 </Badge>
               )}
               <EstadoBadge c={c} />
-              <ChevronDown
-                className={cn(
-                  "size-4 text-muted-foreground transition-transform",
-                  aberto && "rotate-180",
-                )}
-              />
+              {!travado && (
+                <ChevronDown
+                  className={cn(
+                    "size-4 text-muted-foreground transition-transform",
+                    expandido && "rotate-180",
+                  )}
+                />
+              )}
             </div>
           </div>
           <div className="space-y-2">
@@ -367,7 +389,7 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
         )}
       </div>
 
-      {aberto && (
+      {expandido && (
         <div className="border-t border-border p-5 pt-4">
           <ul className="divide-y divide-border">
             {c.itens.map((i) => {
@@ -376,18 +398,20 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
               // ele (comparação por nome, ver ehResponsavel em g-check-store.tsx).
               // Reforçado no banco pela migration
               // 20260824140000_restrict_item_status_to_responsavel.sql.
-              const podeMarcar = isAdmin || ehResponsavel(i, profile?.nome);
+              const podeMarcar = !travado && (isAdmin || ehResponsavel(i, profile?.nome));
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
                   <button
                     onClick={() => podeMarcar && toggleItem(c.id, i.id)}
                     disabled={!podeMarcar}
                     aria-label={
-                      !podeMarcar
-                        ? `Item atribuído a ${i.responsavel}`
-                        : feito
-                          ? `Reabrir ${i.titulo}`
-                          : `Concluir ${i.titulo}`
+                      travado
+                        ? "Rotinas de hoje desativadas"
+                        : !podeMarcar
+                          ? `Item atribuído a ${i.responsavel}`
+                          : feito
+                            ? `Reabrir ${i.titulo}`
+                            : `Concluir ${i.titulo}`
                     }
                     className={cn(
                       "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
@@ -421,14 +445,18 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
           </ul>
           {isAdmin && (
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => concluirTodos(c.id)} disabled={p.pendentes === 0}>
+              <Button
+                size="sm"
+                onClick={() => concluirTodos(c.id)}
+                disabled={travado || p.pendentes === 0}
+              >
                 <Check className="size-4" /> Concluir rotina
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => reabrir(c.id)}
-                disabled={p.feitos === 0}
+                disabled={travado || p.feitos === 0}
               >
                 <RotateCcw className="size-4" /> Reabrir
               </Button>
@@ -440,9 +468,56 @@ function ChecklistCard({ c, destacar = false }: { c: Checklist; destacar?: boole
   );
 }
 
+/**
+ * Faixa exibida quando as rotinas de hoje estão desativadas (feriado). Para o
+ * funcionário é só informativa; para o admin traz o atalho de reativar (a ação
+ * "oficial" de pausar/retomar fica no dashboard, em PausaRotinasHoje).
+ */
+function BannerRotinasPausadas({ hojeISO }: { hojeISO: string }) {
+  const { isAdmin } = useAuth();
+  const queryClient = useQueryClient();
+  const [enviando, setEnviando] = React.useState(false);
+
+  async function reativar() {
+    setEnviando(true);
+    try {
+      await reativarDia(hojeISO);
+      toast.success("Rotinas de hoje reativadas.");
+      queryClient.invalidateQueries({ queryKey: DIAS_DESATIVADOS_QUERY_KEY });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível reativar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-chart-4/30 bg-chart-4/10 p-4">
+      <div className="flex items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-chart-4/20 text-chart-4">
+          <CalendarOff className="size-4.5" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold">Rotinas de hoje desativadas</p>
+          <p className="text-xs text-muted-foreground">
+            A marcação de itens está travada hoje.{" "}
+            {isAdmin ? "Reative para voltar a registrar." : "Fale com o administrador."}
+          </p>
+        </div>
+      </div>
+      {isAdmin && (
+        <Button size="sm" variant="outline" disabled={enviando} onClick={reativar}>
+          {enviando ? "Reativando…" : "Reativar rotinas de hoje"}
+        </Button>
+      )}
+    </section>
+  );
+}
+
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useGCheck();
   const { isAdmin, profile } = useAuth();
+  const { hojeISO, hojeDesativado } = useHojeDesativado();
   const {
     estados,
     turnos: turnosSearch,
@@ -554,6 +629,8 @@ function ChecklistsPage() {
   return (
     <AppShell title="Checklists" subtitle="Rotinas operacionais da Loja Centro">
       <div className="mx-auto max-w-4xl space-y-5">
+        {hojeDesativado && <BannerRotinasPausadas hojeISO={hojeISO} />}
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <FiltrosChecklist
@@ -575,7 +652,12 @@ function ChecklistsPage() {
 
         <div className="space-y-4">
           {lista.map((c) => (
-            <ChecklistCard key={c.id} c={c} destacar={c.id === checklistDestaque} />
+            <ChecklistCard
+              key={c.id}
+              c={c}
+              destacar={c.id === checklistDestaque}
+              travado={hojeDesativado}
+            />
           ))}
           {lista.length === 0 && (
             <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
