@@ -335,7 +335,7 @@ function ChecklistCard({
       ref={sectionRef}
       className={cn(
         "scroll-mt-24 rounded-2xl border border-border bg-card shadow-sm transition-shadow",
-        (!c.ativo || foraDoDia) && "opacity-70",
+        (!c.ativo || bloqueado) && "opacity-70",
         destacar && "ring-2 ring-primary/60",
       )}
     >
@@ -369,7 +369,7 @@ function ChecklistCard({
                   Inativa
                 </Badge>
               )}
-              {foraDoDia ? (
+              {bloqueado ? (
                 <Badge
                   variant="outline"
                   className="border-transparent bg-muted text-muted-foreground"
