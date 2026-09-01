@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, ChevronLeft, ChevronRight, List } from "lucide-react";
+import { CalendarDays, CalendarOff, ChevronLeft, ChevronRight, List } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,10 @@ function Legenda() {
           {ESTILO[s].label}
         </span>
       ))}
+      <span className="inline-flex items-center gap-1.5">
+        <span className="size-2 rounded-full bg-chart-4" />
+        Sem expediente
+      </span>
     </div>
   );
 }
@@ -158,7 +162,10 @@ function VistaLista({
                 </span>
               )}
               {d.pausado ? (
-                <p className="text-sm text-muted-foreground">Sem expediente (rotinas pausadas)</p>
+                <p className="inline-flex items-center gap-1.5 rounded-md bg-chart-4/15 px-2 py-1 text-xs font-medium text-chart-4">
+                  <CalendarOff className="size-3.5" />
+                  Sem expediente — rotinas desativadas
+                </p>
               ) : d.entradas.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Sem rotinas neste dia</p>
               ) : (
@@ -223,6 +230,7 @@ function VistaCalendario({
                 className={cn(
                   "flex min-h-32 flex-col gap-1.5 bg-card p-2 text-left align-top transition-colors hover:bg-muted/50",
                   !doMes && "bg-muted/20",
+                  dia?.pausado && "bg-chart-4/5 hover:bg-chart-4/10",
                 )}
               >
                 <span
@@ -240,7 +248,10 @@ function VistaCalendario({
 
                 <div className="flex min-w-0 flex-col gap-1">
                   {dia?.pausado && (
-                    <span className="px-1.5 text-xs text-muted-foreground">Sem expediente</span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-chart-4/15 px-1.5 py-1 text-xs font-medium text-chart-4">
+                      <CalendarOff className="size-3" />
+                      Sem expediente
+                    </span>
                   )}
                   {visiveis.map((e) => (
                     <span

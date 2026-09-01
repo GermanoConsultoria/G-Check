@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   CalendarCheck,
+  CalendarCog,
   CalendarOff,
   CheckCircle2,
   Clock,
@@ -42,13 +43,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
+import { cn, dataDoIso, isoDoDia } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
 import {
   desativarDia,
   DIAS_DESATIVADOS_QUERY_KEY,
   reativarDia,
+  useDiasDesativados,
   useHojeDesativado,
 } from "@/lib/dias-desativados";
 import {
@@ -335,6 +339,135 @@ function TarefasBreakdown({
   );
 }
 
+const fmtDataCurta = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+const fmtDataExtenso = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * Popover com um calendário para o admin programar/desfazer dias sem expediente
+ * em QUALQUER data (não só hoje). Dias já desativados aparecem destacados; clicar
+ * num dia abre a confirmação e alterna a marca em `dias_desativados` — a mesma
+ * tabela usada por PausaRotinasHoje e refletida no histórico.
+ */
+function PersonalizarRotinas() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const { datas } = useDiasDesativados();
+  const [aberto, setAberto] = React.useState(false);
+  const [mes, setMes] = React.useState(() => dataDoIso(isoDoDia(new Date())));
+  const [alvo, setAlvo] = React.useState<Date | null>(null);
+  const [enviando, setEnviando] = React.useState(false);
+
+  const hoje = React.useMemo(() => dataDoIso(isoDoDia(new Date())), []);
+  const diasDesativados = React.useMemo(() => datas.map((iso) => dataDoIso(iso)), [datas]);
+
+  const alvoISO = alvo ? isoDoDia(alvo) : null;
+  const alvoDesativado = alvoISO ? datas.includes(alvoISO) : false;
+
+  function escolherDia(d: Date | undefined) {
+    if (!d) return;
+    setAberto(false);
+    setAlvo(d);
+  }
+
+  async function confirmar() {
+    if (!alvo || !alvoISO) return;
+    setEnviando(true);
+    try {
+      if (alvoDesativado) {
+        await reativarDia(alvoISO);
+        toast.success(`Rotinas de ${fmtDataCurta.format(alvo)} reativadas.`);
+      } else {
+        await desativarDia(alvoISO, session?.user.id ?? null);
+        toast.success(`Rotinas de ${fmtDataCurta.format(alvo)} desativadas.`);
+      }
+      queryClient.invalidateQueries({ queryKey: DIAS_DESATIVADOS_QUERY_KEY });
+      setAlvo(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <>
+      <Popover open={aberto} onOpenChange={setAberto}>
+        <PopoverTrigger asChild>
+          <Button
+            size="icon"
+            variant="outline"
+            aria-label="Personalizar dias sem expediente"
+            title="Personalizar dias sem expediente"
+          >
+            <CalendarCog className="size-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-auto p-0">
+          <div className="border-b border-border px-3 py-2.5">
+            <p className="text-sm font-medium">Programar dias sem expediente</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Escolha uma data para desativar as rotinas. Dias já desativados aparecem
+              destacados — selecione de novo para reativar.
+            </p>
+          </div>
+          <Calendar
+            mode="single"
+            selected={undefined}
+            month={mes}
+            onMonthChange={setMes}
+            onSelect={escolherDia}
+            disabled={{ before: hoje }}
+            modifiers={{ desativado: diasDesativados }}
+            modifiersClassNames={{
+              desativado: "bg-chart-4/15 text-chart-4 rounded-md aria-selected:bg-chart-4/15",
+            }}
+          />
+          <div className="flex items-center gap-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <span className="size-2 rounded-full bg-chart-4" />
+            Dia sem expediente
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <AlertDialog open={!!alvo} onOpenChange={(o) => !o && setAlvo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {alvoDesativado
+                ? "Reativar as rotinas deste dia?"
+                : "Desativar as rotinas deste dia?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {alvo && (
+                <span className="font-medium capitalize">{fmtDataExtenso.format(alvo)}</span>
+              )}
+              {". "}
+              {alvoDesativado
+                ? "As rotinas desse dia voltam a ser cobradas no painel e no histórico."
+                : "Nesse dia as rotinas não serão cobradas no painel nem no histórico. Nenhuma checklist é apagada — você pode reativar quando quiser."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={enviando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmar} disabled={enviando}>
+              {alvoDesativado ? "Reativar" : "Desativar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 /**
  * Faixa no topo do dashboard (admin) para pausar/retomar as rotinas do dia —
  * usada em feriados e dias sem expediente. Desativar pede confirmação; enquanto
@@ -379,14 +512,17 @@ function PausaRotinasHoje({ hojeISO, desativado }: { hojeISO: string; desativado
             </p>
           </div>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={enviando}
-          onClick={() => alternar(true)}
-        >
-          {enviando ? "Reativando…" : "Reativar rotinas de hoje"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={enviando}
+            onClick={() => alternar(true)}
+          >
+            {enviando ? "Reativando…" : "Reativar rotinas de hoje"}
+          </Button>
+          <PersonalizarRotinas />
+        </div>
       </section>
     );
   }
@@ -404,26 +540,29 @@ function PausaRotinasHoje({ hojeISO, desativado }: { hojeISO: string; desativado
           </p>
         </div>
       </div>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button size="sm" variant="outline" disabled={enviando}>
-            Desativar rotinas de hoje
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deseja realmente desativar as rotinas de hoje?</AlertDialogTitle>
-            <AlertDialogDescription>
-              As rotinas de hoje deixam de ser cobradas no painel enquanto estiverem
-              desativadas. Nenhuma checklist é apagada — você pode reativar a qualquer momento.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => alternar(false)}>Desativar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <div className="flex items-center gap-2">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="outline" disabled={enviando}>
+              Desativar rotinas de hoje
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Deseja realmente desativar as rotinas de hoje?</AlertDialogTitle>
+              <AlertDialogDescription>
+                As rotinas de hoje deixam de ser cobradas no painel enquanto estiverem
+                desativadas. Nenhuma checklist é apagada — você pode reativar a qualquer momento.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => alternar(false)}>Desativar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <PersonalizarRotinas />
+      </div>
     </section>
   );
 }

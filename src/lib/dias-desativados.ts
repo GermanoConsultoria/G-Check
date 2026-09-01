@@ -31,19 +31,33 @@ export async function reativarDia(iso: string) {
 }
 
 /**
- * Estado compartilhado de "hoje está pausado?". Usado no dashboard (não cobra as
- * pendências) e na página de checklists (trava a marcação dos itens).
+ * Lista completa das datas sem expediente (ISO "yyyy-MM-dd"). Base para o
+ * calendário de personalização no dashboard e para os marcadores no histórico.
  */
-export function useHojeDesativado() {
+export function useDiasDesativados() {
   const { session } = useAuth();
   const query = useQuery({
     queryKey: DIAS_DESATIVADOS_QUERY_KEY,
     queryFn: fetchDiasDesativados,
     enabled: !!session,
   });
+  const datas = query.data ?? [];
+  return {
+    datas,
+    datasSet: new Set(datas),
+    isLoading: query.isLoading,
+  };
+}
+
+/**
+ * Estado compartilhado de "hoje está pausado?". Usado no dashboard (não cobra as
+ * pendências) e na página de checklists (trava a marcação dos itens).
+ */
+export function useHojeDesativado() {
+  const { datasSet } = useDiasDesativados();
   const hojeISO = isoDoDia(new Date());
   return {
     hojeISO,
-    hojeDesativado: (query.data ?? []).includes(hojeISO),
+    hojeDesativado: datasSet.has(hojeISO),
   };
 }
