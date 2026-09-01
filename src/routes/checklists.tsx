@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   CalendarDays,
@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Eye,
   Filter,
   RotateCcw,
   Trash2,
@@ -42,6 +43,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Progress } from "@/components/ui/progress";
 import { cn, dataDoIso } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-store";
+import type { ChecklistExecucaoRow } from "@/lib/supabase";
+import { fetchExecucoes, HISTORICO_QUERY_KEY } from "@/lib/historico";
 import {
   DIAS_DESATIVADOS_QUERY_KEY,
   reativarDia,
@@ -63,6 +66,44 @@ import {
 } from "@/lib/g-check-store";
 
 const ESTADOS_VALIDOS: ChecklistEstado[] = ["pendente", "em_andamento", "atrasada", "concluido"];
+
+/**
+ * Monta um `Checklist` somente-leitura a partir do snapshot de um dia já fechado
+ * (`checklist_execucoes`). Sem `tempoLimite` de propósito: fora de hoje não faz
+ * sentido derivar "atrasada" pelo relógio atual. `vivo` (a rotina ainda existente
+ * de mesmo id) só empresta os dias da semana / status ativo para o cabeçalho.
+ */
+function checklistDeSnapshot(e: ChecklistExecucaoRow, vivo: Checklist | undefined): Checklist {
+  return {
+    id: e.checklist_id,
+    nome: e.nome,
+    setor: e.setor,
+    turno: e.turno,
+    horario: e.horario.slice(0, 5),
+    ativo: vivo?.ativo ?? true,
+    diasSemana: vivo?.diasSemana ?? [dataDoIso(e.data).getDay()],
+    itens: (e.itens ?? []).map((it, idx) => ({
+      id: `${e.checklist_id}-snap-${idx}`,
+      titulo: it.titulo,
+      responsavel: it.responsavel,
+      status: it.status === "concluido" ? "concluido" : "pendente",
+    })),
+  };
+}
+
+/** Cópia da rotina com todo item "pendente" — usada em dias que ainda não chegaram. */
+function checklistPendente(c: Checklist): Checklist {
+  return {
+    id: c.id,
+    nome: c.nome,
+    setor: c.setor,
+    turno: c.turno,
+    horario: c.horario,
+    ativo: c.ativo,
+    diasSemana: c.diasSemana,
+    itens: c.itens.map((i) => ({ ...i, status: "pendente" as const })),
+  };
+}
 
 /**
  * Filtros (e o card a destacar) vêm pela URL — assim o dashboard pode linkar
@@ -264,6 +305,28 @@ function EstadoBadge({ c }: { c: Checklist }) {
   );
 }
 
+/**
+ * Badge de uma rotina de um dia já fechado: não há "em andamento" — ou ela foi
+ * concluída (verde) ou ficou incompleta (vermelho), com o mesmo ponto colorido
+ * usado no Histórico.
+ */
+function BadgeDiaFechado({ c }: { c: Checklist }) {
+  const { feitos, total } = progresso(c);
+  const completa = total > 0 && feitos === total;
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 border-transparent font-medium",
+        completa ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
+      )}
+    >
+      <span className={cn("size-1.5 rounded-full", completa ? "bg-success" : "bg-destructive")} />
+      {completa ? "Concluída" : "Incompleta"}
+    </Badge>
+  );
+}
+
 function ExcluirChecklistButton({ c }: { c: Checklist }) {
   const { excluirChecklist } = useGCheck();
 
@@ -307,6 +370,8 @@ function ChecklistCard({
   destacar = false,
   travado = false,
   foraDoDia = false,
+  somenteLeitura = false,
+  diaFechado = false,
 }: {
   c: Checklist;
   destacar?: boolean | undefined;
@@ -314,6 +379,10 @@ function ChecklistCard({
   travado?: boolean | undefined;
   /** Rotina não programada para hoje (diasSemana) — aparece "desativada". */
   foraDoDia?: boolean | undefined;
+  /** Dia diferente de hoje: a card abre para ver as tarefas, mas nada pode ser marcado. */
+  somenteLeitura?: boolean | undefined;
+  /** Dia passado já encerrado: o badge de estado vira "Concluída"/"Incompleta". */
+  diaFechado?: boolean | undefined;
 }) {
   const { toggleItem, concluirTodos, reabrir } = useGCheck();
   const { isAdmin, profile } = useAuth();
@@ -321,7 +390,7 @@ function ChecklistCard({
   const sectionRef = React.useRef<HTMLElement>(null);
   const p = progresso(c);
   // Dia pausado ou fora da programação: a rotina não abre nem aceita marcação —
-  // o card fica só com o cabeçalho.
+  // o card fica só com o cabeçalho. "somenteLeitura" (outro dia) ainda abre.
   const bloqueado = travado || foraDoDia;
   const expandido = aberto && !bloqueado;
 
@@ -370,6 +439,15 @@ function ChecklistCard({
                   Inativa
                 </Badge>
               )}
+              {somenteLeitura && !bloqueado && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-transparent bg-muted text-muted-foreground"
+                >
+                  <Eye className="size-3" />
+                  Leitura
+                </Badge>
+              )}
               {bloqueado ? (
                 <Badge
                   variant="outline"
@@ -377,6 +455,8 @@ function ChecklistCard({
                 >
                   Desativada hoje
                 </Badge>
+              ) : diaFechado ? (
+                <BadgeDiaFechado c={c} />
               ) : (
                 <EstadoBadge c={c} />
               )}
@@ -417,7 +497,8 @@ function ChecklistCard({
               // ele (comparação por nome, ver ehResponsavel em g-check-store.tsx).
               // Reforçado no banco pela migration
               // 20260824140000_restrict_item_status_to_responsavel.sql.
-              const podeMarcar = !bloqueado && (isAdmin || ehResponsavel(i, profile?.nome));
+              const podeMarcar =
+                !bloqueado && !somenteLeitura && (isAdmin || ehResponsavel(i, profile?.nome));
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
                   <button
@@ -426,11 +507,13 @@ function ChecklistCard({
                     aria-label={
                       bloqueado
                         ? "Rotina desativada hoje"
-                        : !podeMarcar
-                          ? `Item atribuído a ${i.responsavel}`
-                          : feito
-                            ? `Reabrir ${i.titulo}`
-                            : `Concluir ${i.titulo}`
+                        : somenteLeitura
+                          ? "Somente leitura — abra o dia de hoje para marcar"
+                          : !podeMarcar
+                            ? `Item atribuído a ${i.responsavel}`
+                            : feito
+                              ? `Reabrir ${i.titulo}`
+                              : `Concluir ${i.titulo}`
                     }
                     className={cn(
                       "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
@@ -462,7 +545,7 @@ function ChecklistCard({
               );
             })}
           </ul>
-          {isAdmin && (
+          {isAdmin && !somenteLeitura && (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -534,6 +617,11 @@ function BannerRotinasPausadas({ hojeISO }: { hojeISO: string }) {
 }
 
 const fmtDataTarefa = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+const fmtDiaLongo = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "2-digit",
+  month: "long",
+});
 
 /**
  * Uma tarefa (item) do funcionário: o item em si, a rotina a que pertence e o
@@ -635,16 +723,22 @@ function TarefasFuncionarioLista({
   data,
   bloqueado,
   comFiltro,
+  somenteLeitura = false,
 }: {
   tarefas: TarefaFuncionario[];
   data: Date;
   bloqueado: boolean;
   comFiltro: boolean;
+  somenteLeitura?: boolean | undefined;
 }) {
   if (tarefas.length === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        {comFiltro ? "Nenhuma tarefa para esse recorte." : "Você não tem tarefas para hoje."}
+        {comFiltro
+          ? "Nenhuma tarefa para esse recorte."
+          : somenteLeitura
+            ? "Nenhuma tarefa sua nesse dia."
+            : "Você não tem tarefas para hoje."}
       </p>
     );
   }
@@ -665,7 +759,7 @@ function TarefasFuncionarioLista({
 
 function ChecklistsPage() {
   const { checklists, isLoading, isError } = useGCheck();
-  const { isAdmin, profile } = useAuth();
+  const { session, isAdmin, profile } = useAuth();
   const { hojeISO, hojeDesativado } = useHojeDesativado();
   const {
     estados,
@@ -675,6 +769,20 @@ function ChecklistsPage() {
     vista,
   } = Route.useSearch();
   const navigate = Route.useNavigate();
+
+  // Dia em foco: sem "?dia=" (ou dia === hoje) é o dia corrente e tudo pode ser
+  // marcado; qualquer outro dia é somente-leitura (abre para ver, não marca).
+  const ehHoje = !dia || dia === hojeISO;
+  const ehPassado = !!dia && !ehHoje && dataDoIso(dia) < dataDoIso(hojeISO);
+  const somenteLeitura = !ehHoje;
+
+  // Registro de um dia já fechado (snapshot em checklist_execucoes) — leitura só
+  // de admin (RLS). Alimenta as cards quando o admin navega para um dia passado.
+  const execucoesDiaQuery = useQuery({
+    queryKey: [...HISTORICO_QUERY_KEY, dia ?? "", dia ?? ""],
+    queryFn: () => fetchExecucoes(dia ?? "", dia ?? ""),
+    enabled: !!session && isAdmin && ehPassado,
+  });
 
   const estadosSelecionados = React.useMemo(() => estados ?? [], [estados]);
   const turnosSelecionados = React.useMemo(() => turnosSearch ?? [], [turnosSearch]);
@@ -768,33 +876,56 @@ function ChecklistsPage() {
   // semana (checklist.diasSemana), o filtro casa pelo getDay() daquela data.
   const diaSemanaAlvo = dia ? dataDoIso(dia).getDay() : null;
 
+  // Data mostrada em cada tarefa: o dia escolhido no seletor ou hoje.
+  const dataAlvo = dia ? dataDoIso(dia) : new Date();
+
   // Sem "?dia=", rotina não programada para hoje aparece "desativada" (bloqueada).
   // Funcionário nem vê; admin vê marcada. Filtro de estado esconde essas (não têm
   // estado do dia).
   const foraDoDia = (c: Checklist) => diaSemanaAlvo === null && !rodaNoDia(c);
 
-  const lista = minhasChecklists.filter((c) => {
+  // Base de dados do dia em foco:
+  //  - hoje              -> estado ao vivo (checklist_items), pode marcar;
+  //  - passado (admin)   -> snapshot congelado em checklist_execucoes;
+  //  - futuro, ou passado sem acesso ao histórico -> estrutura da rotina programada
+  //    para aquele dia da semana, com todos os itens "pendente".
+  // Nos dois últimos casos as cards ficam somente-leitura.
+  const checklistsDoDia: Checklist[] = ehHoje
+    ? minhasChecklists
+    : ehPassado && isAdmin
+      ? (execucoesDiaQuery.data ?? []).map((e) =>
+          checklistDeSnapshot(
+            e,
+            checklists.find((c) => c.id === e.checklist_id),
+          ),
+        )
+      : minhasChecklists
+          .filter((c) => c.diasSemana.includes(dataAlvo.getDay()))
+          .map(checklistPendente);
+
+  const lista = checklistsDoDia.filter((c) => {
     if (turnosSelecionados.length > 0 && !turnosSelecionados.includes(c.turno as Turno)) {
       return false;
+    }
+    if (!ehHoje) {
+      return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
     }
     if (diaSemanaAlvo !== null && !c.diasSemana.includes(diaSemanaAlvo)) return false;
     if (foraDoDia(c)) return isAdmin && estadosSelecionados.length === 0;
     return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
   });
 
-  // Data mostrada em cada tarefa: o dia escolhido no seletor ou hoje.
-  const dataAlvo = dia ? dataDoIso(dia) : new Date();
-
   // Funcionário não vê a rotina inteira: percorre os itens atribuídos a ele
   // (nas rotinas que passam pelos mesmos filtros de turno/dia) e monta uma
   // lista plana de tarefas, ordenada pelo que precisa de ação primeiro.
   const tarefasFuncionario: TarefaFuncionario[] = isAdmin
     ? []
-    : minhasChecklists
+    : checklistsDoDia
         .filter((c) => {
           if (turnosSelecionados.length > 0 && !turnosSelecionados.includes(c.turno as Turno)) {
             return false;
           }
+          if (!ehHoje) return true;
           if (diaSemanaAlvo !== null && !c.diasSemana.includes(diaSemanaAlvo)) return false;
           return !foraDoDia(c);
         })
@@ -813,6 +944,8 @@ function ChecklistsPage() {
   const temFiltro =
     estadosSelecionados.length > 0 || turnosSelecionados.length > 0 || diaSemanaAlvo !== null;
 
+  const carregandoDia = ehPassado && isAdmin && execucoesDiaQuery.isLoading;
+
   return (
     <AppShell
       title="Checklists"
@@ -820,6 +953,23 @@ function ChecklistsPage() {
     >
       <div className="mx-auto max-w-4xl space-y-5">
         {hojeDesativado && <BannerRotinasPausadas hojeISO={hojeISO} />}
+
+        {somenteLeitura && (
+          <section className="flex items-center gap-3 rounded-2xl border border-border bg-muted/40 p-4">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+              <Eye className="size-4.5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold capitalize">{fmtDiaLongo.format(dataAlvo)}</p>
+              <p className="text-xs text-muted-foreground">
+                {ehPassado
+                  ? "Registro de um dia já fechado — somente leitura."
+                  : "Este dia ainda não chegou — somente leitura."}{" "}
+                As rotinas só podem ser marcadas no dia de hoje.
+              </p>
+            </div>
+          </section>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -842,29 +992,42 @@ function ChecklistsPage() {
 
         {isAdmin ? (
           <div className="space-y-4">
-            {lista.map((c) => (
-              <ChecklistCard
-                key={c.id}
-                c={c}
-                destacar={c.id === checklistDestaque}
-                travado={hojeDesativado}
-                foraDoDia={foraDoDia(c)}
-              />
-            ))}
-            {lista.length === 0 && (
-              <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                {diaSemanaAlvo !== null
-                  ? "Nenhuma rotina para o dia escolhido."
-                  : "Nenhuma rotina neste estado."}
-              </p>
+            {carregandoDia ? (
+              <p className="text-sm text-muted-foreground">Carregando registro do dia…</p>
+            ) : (
+              <>
+                {lista.map((c) => (
+                  <ChecklistCard
+                    key={c.id}
+                    c={c}
+                    destacar={c.id === checklistDestaque}
+                    travado={hojeDesativado}
+                    foraDoDia={ehHoje ? foraDoDia(c) : false}
+                    somenteLeitura={somenteLeitura}
+                    diaFechado={ehPassado}
+                  />
+                ))}
+                {lista.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                    {somenteLeitura
+                      ? ehPassado
+                        ? "Nenhuma rotina registrada nesse dia."
+                        : "Nenhuma rotina programada para esse dia."
+                      : diaSemanaAlvo !== null
+                        ? "Nenhuma rotina para o dia escolhido."
+                        : "Nenhuma rotina neste estado."}
+                  </p>
+                )}
+              </>
             )}
           </div>
         ) : (
           <TarefasFuncionarioLista
             tarefas={tarefasFuncionario}
             data={dataAlvo}
-            bloqueado={hojeDesativado}
+            bloqueado={hojeDesativado || somenteLeitura}
             comFiltro={temFiltro}
+            somenteLeitura={somenteLeitura}
           />
         )}
       </div>
