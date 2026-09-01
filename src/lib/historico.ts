@@ -30,7 +30,12 @@ export async function rolloverPendente(): Promise<void> {
   if (error) throw error;
 }
 
-export type StatusHistorico = "futura" | "hoje" | "incompleta" | "completa";
+export type StatusHistorico =
+  | "futura"
+  | "naoIniciada"
+  | "hoje"
+  | "incompleta"
+  | "completa";
 
 export interface EntradaHistorico {
   checklistId: string;
@@ -57,7 +62,8 @@ export interface DiaHistorico {
  * e o agendamento futuro (checklist.diasSemana) numa lista dia a dia:
  *
  * - passado  -> a partir do snapshot: completa (verde) ou incompleta (vermelho)
- * - hoje     -> ao vivo: tudo feito = completa (verde), senão em andamento (azul)
+ * - hoje     -> ao vivo: tudo feito = completa (verde); nada feito = não iniciada
+ *              (cinza); algum item feito = em andamento (azul)
  * - futuro   -> agendada (cinza)
  * - pausado  -> dia sem expediente, sem entradas
  */
@@ -127,7 +133,9 @@ export function montarHistorico(opts: {
                 ? "completa"
                 : atrasada
                   ? "incompleta"
-                  : "hoje";
+                  : feitos === 0
+                    ? "naoIniciada"
+                    : "hoje";
           return {
             checklistId: c.id,
             nome: c.nome,

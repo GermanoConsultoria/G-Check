@@ -55,6 +55,12 @@ const ESTILO: Record<
     texto: "text-muted-foreground",
     pill: "bg-muted text-muted-foreground",
   },
+  naoIniciada: {
+    label: "Não iniciada",
+    dot: "bg-muted-foreground/40",
+    texto: "text-muted-foreground",
+    pill: "bg-muted text-muted-foreground",
+  },
   hoje: {
     label: "Em andamento",
     dot: "bg-chart-4",
@@ -122,9 +128,11 @@ function LinhaEntrada({ e }: { e: DiaHistorico["entradas"][number] }) {
 function VistaLista({
   dias,
   hojeISO,
+  onAbrirDia,
 }: {
   dias: DiaHistorico[];
   hojeISO: string;
+  onAbrirDia: (iso: string) => void;
 }) {
   const alvoRef = React.useRef<HTMLLIElement>(null);
   React.useEffect(() => {
@@ -139,8 +147,19 @@ function VistaLista({
           <li
             key={d.iso}
             ref={ehHoje ? alvoRef : undefined}
-            className={cn("flex gap-4 p-4", ehHoje && "bg-info/5")}
+            className={cn(
+              "relative flex gap-4 p-4 transition-colors hover:bg-muted/50",
+              ehHoje && "bg-info/5",
+            )}
           >
+            {/* Botão que cobre a linha inteira: por ser posicionado, fica acima
+                do conteúdo estático e captura o clique em qualquer ponto. */}
+            <button
+              type="button"
+              onClick={() => onAbrirDia(d.iso)}
+              aria-label={`Abrir checklist de ${d.data.toLocaleDateString("pt-BR")}`}
+              className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            />
             <div className="flex w-12 shrink-0 flex-col items-center pt-0.5">
               <span
                 className={cn(
@@ -339,8 +358,10 @@ function HistoricoPage() {
   function setVista(v: "lista" | "calendario") {
     navigate({ search: (p) => ({ ...p, vista: v === "calendario" ? "calendario" : undefined }) });
   }
+  // Clique num dia (calendário ou lista) leva direto à checklist daquela data,
+  // já com o filtro de dia aplicado em /checklists (somente leitura fora de hoje).
   function abrirDia(iso: string) {
-    navigate({ search: (p) => ({ ...p, de: iso, ate: iso, vista: undefined }) });
+    navigate({ to: "/checklists", search: { dia: iso } });
   }
 
   const carregando = carregandoChecklists || execucoesQuery.isLoading;
@@ -454,7 +475,7 @@ function HistoricoPage() {
             onAbrirDia={abrirDia}
           />
         ) : (
-          <VistaLista dias={dias} hojeISO={hojeISO} />
+          <VistaLista dias={dias} hojeISO={hojeISO} onAbrirDia={abrirDia} />
         )}
       </div>
     </AppShell>
