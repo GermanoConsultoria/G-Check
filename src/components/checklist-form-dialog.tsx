@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Camera, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,7 @@ const itemSchema = z.object({
   titulo: z.string().trim().min(1, "Informe o título do item."),
   detalhe: z.string().trim().optional(),
   responsavel: z.string().trim().min(1, "Informe o responsável."),
+  exigeFoto: z.boolean(),
 });
 
 const checklistSchema = z
@@ -69,7 +70,7 @@ const checklistSchema = z
 
 type ChecklistFormValues = z.infer<typeof checklistSchema>;
 
-const itemVazio = { titulo: "", detalhe: "", responsavel: "" };
+const itemVazio = { titulo: "", detalhe: "", responsavel: "", exigeFoto: false };
 
 function turnoOuPadrao(turno: string): (typeof turnos)[number] {
   return (turnos as readonly string[]).includes(turno)
@@ -104,6 +105,7 @@ function valoresPadrao(checklist?: Checklist): ChecklistFormValues {
       titulo: i.titulo,
       detalhe: i.detalhe ?? "",
       responsavel: i.responsavel,
+      exigeFoto: i.exigeFoto,
     })),
   };
 }
@@ -153,6 +155,7 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
         ...(i.itemId ? { id: i.itemId } : {}),
         titulo: i.titulo,
         responsavel: i.responsavel,
+        exigeFoto: i.exigeFoto,
         ...(detalhe ? { detalhe } : {}),
       };
     });
@@ -457,6 +460,26 @@ function ChecklistFormDialog({ checklist }: { checklist?: Checklist }) {
                           </FormItem>
                         );
                       }}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`itens.${index}.exigeFoto`}
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between gap-3 rounded-lg border border-border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="flex items-center gap-1.5">
+                              <Camera className="size-3.5" />
+                              Exigir foto para concluir
+                            </FormLabel>
+                            <p className="text-xs text-muted-foreground">
+                              O responsável precisa anexar uma foto antes de marcar esta tarefa.
+                            </p>
+                          </div>
+                          <FormControl>
+                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )}
                     />
                   </div>
                 ))}

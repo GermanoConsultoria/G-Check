@@ -59,6 +59,12 @@ create table if not exists checklist_items (
   updated_at timestamptz not null default now()
 );
 
+-- 'exige_foto' / 'foto_url' entraram depois (migration 20260901120000): a tarefa
+-- só conclui com uma foto anexada. exige_foto é config (admin); foto_url é a URL
+-- pública da foto do dia (limpa no rollover).
+alter table checklist_items add column if not exists exige_foto boolean not null default false;
+alter table checklist_items add column if not exists foto_url text;
+
 create index if not exists checklist_items_checklist_id_idx
   on checklist_items (checklist_id);
 create index if not exists checklist_items_checklist_id_posicao_idx
@@ -189,7 +195,7 @@ $$;
 -- Funcionário só altera o STATUS de um item, e apenas se for o responsável por
 -- ele (comparação por nome, mesmo critério do frontend em
 -- src/lib/g-check-store.tsx, função ehResponsavel). Admin altera qualquer campo.
--- (versão final: migration 20260824140000)
+-- (versão final: migrations 20260824140000 + 20260901120000 — exige_foto/foto_url)
 create or replace function public.checklist_items_restrict_funcionario_update()
 returns trigger
 language plpgsql
@@ -199,7 +205,7 @@ as $$
 declare
   meu_nome text;
 begin
-  -- rollover diário (rollover_pendente) reinicia o status em massa
+  -- rollover diário (rollover_pendente) reinicia status/foto em massa
   if coalesce(current_setting('app.bypass_item_guard', true), '') = 'on' then
     return new;
   end if;
@@ -213,16 +219,25 @@ begin
     or new.responsavel is distinct from old.responsavel
     or new.posicao is distinct from old.posicao
     or new.checklist_id is distinct from old.checklist_id
+    or new.exige_foto is distinct from old.exige_foto
   then
     raise exception 'Apenas administradores podem editar os itens da checklist.';
   end if;
 
-  if new.status is distinct from old.status then
+  if new.status is distinct from old.status or new.foto_url is distinct from old.foto_url then
     select nome into meu_nome from public.profiles where id = auth.uid();
 
     if meu_nome is null or lower(trim(meu_nome)) is distinct from lower(trim(old.responsavel)) then
       raise exception 'Você só pode marcar itens atribuídos a você.';
     end if;
+  end if;
+
+  if new.status = 'concluido'
+    and new.status is distinct from old.status
+    and new.exige_foto
+    and coalesce(new.foto_url, '') = ''
+  then
+    raise exception 'Anexe uma foto para concluir esta tarefa.';
   end if;
 
   return new;
@@ -298,7 +313,9 @@ begin
         jsonb_build_object(
           'titulo', ci.titulo,
           'responsavel', ci.responsavel,
-          'status', case when usar_estado then ci.status else 'pendente' end
+          'status', case when usar_estado then ci.status else 'pendente' end,
+          'exige_foto', ci.exige_foto,
+          'foto_url', case when usar_estado then ci.foto_url else null end
         ) order by ci.posicao
       ) filter (where ci.id is not null),
       '[]'
@@ -347,7 +364,9 @@ begin
   end loop;
 
   perform set_config('app.bypass_item_guard', 'on', true);
-  update checklist_items set status = 'pendente' where status <> 'pendente';
+  update checklist_items
+    set status = 'pendente', foto_url = null
+    where status <> 'pendente' or foto_url is not null;
 
   update app_estado set valor = hoje_local::text, atualizado_em = now()
     where chave = 'ultimo_rollover';
@@ -502,6 +521,38 @@ create policy "admin ve execucoes"
   on checklist_execucoes for select
   to authenticated
   using (is_admin());
+
+-- Storage: bucket das fotos de comprovação das tarefas (migration 20260901121000).
+-- Público na leitura; escrita só autenticado (a trava "só o responsável anexa"
+-- é feita no update de checklist_items).
+insert into storage.buckets (id, name, public)
+values ('checklist-fotos', 'checklist-fotos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "checklist-fotos leitura publica" on storage.objects;
+create policy "checklist-fotos leitura publica"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'checklist-fotos');
+
+drop policy if exists "checklist-fotos upload autenticado" on storage.objects;
+create policy "checklist-fotos upload autenticado"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'checklist-fotos');
+
+drop policy if exists "checklist-fotos update autenticado" on storage.objects;
+create policy "checklist-fotos update autenticado"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'checklist-fotos')
+  with check (bucket_id = 'checklist-fotos');
+
+drop policy if exists "checklist-fotos delete autenticado" on storage.objects;
+create policy "checklist-fotos delete autenticado"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'checklist-fotos');
 
 -- Agendamento do rollover diário (pg_cron) — best effort; se indisponível, o
 -- fallback do client (rollover_pendente ao abrir o app) mantém o reset.

@@ -11,6 +11,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+/** Bucket das fotos de comprovação das tarefas (ver migration 20260901121000). */
+export const BUCKET_FOTOS = "checklist-fotos";
+
 export interface ChecklistRow {
   id: string;
   nome: string;
@@ -31,6 +34,10 @@ export interface ChecklistItemRow {
   responsavel: string;
   status: string;
   posicao: number;
+  /** Tarefa só pode ser concluída com uma foto anexada. */
+  exige_foto: boolean;
+  /** URL pública da foto anexada no dia; limpa no rollover. */
+  foto_url: string | null;
 }
 
 export interface SetorRow {
@@ -60,6 +67,12 @@ export interface ChecklistExecucaoRow {
   total_itens: number;
   itens_concluidos: number;
   completa: boolean;
-  itens: { titulo: string; responsavel: string; status: string }[];
+  itens: {
+    titulo: string;
+    responsavel: string;
+    status: string;
+    exige_foto?: boolean;
+    foto_url?: string | null;
+  }[];
   registrado_em: string;
 }

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase, type ChecklistItemRow, type ChecklistRow } from "@/lib/supabase";
+import { BUCKET_FOTOS, supabase, type ChecklistItemRow, type ChecklistRow } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-store";
 import { HISTORICO_QUERY_KEY, rolloverPendente } from "@/lib/historico";
 
@@ -42,6 +42,10 @@ export interface ChecklistItem {
   detalhe?: string;
   status: ItemStatus;
   responsavel: string;
+  /** Tarefa só pode ser concluída depois de anexar uma foto. */
+  exigeFoto: boolean;
+  /** URL pública da foto anexada hoje (limpa no rollover diário). */
+  fotoUrl?: string;
 }
 
 export interface Checklist {
@@ -64,6 +68,8 @@ export interface ItemInput {
   titulo: string;
   detalhe?: string;
   responsavel: string;
+  /** Exigir foto anexada para concluir a tarefa. */
+  exigeFoto: boolean;
 }
 
 export interface ChecklistInput {
@@ -121,7 +127,9 @@ async function fetchChecklists(): Promise<Checklist[]> {
       titulo: it.titulo,
       status: it.status as ItemStatus,
       responsavel: it.responsavel,
+      exigeFoto: it.exige_foto ?? false,
       ...(it.detalhe ? { detalhe: it.detalhe } : {}),
+      ...(it.foto_url ? { fotoUrl: it.foto_url } : {}),
     })),
   }));
 }
@@ -133,6 +141,10 @@ interface Ctx {
   toggleItem: (checklistId: string, itemId: string) => void;
   concluirTodos: (checklistId: string) => void;
   reabrir: (checklistId: string) => void;
+  /** Sobe a foto para o Storage e grava a URL no item. */
+  anexarFoto: (checklistId: string, itemId: string, arquivo: File) => Promise<void>;
+  /** Remove a foto anexada do item. */
+  removerFoto: (checklistId: string, itemId: string) => Promise<void>;
   criarChecklist: (input: ChecklistInput) => void;
   editarChecklist: (checklistId: string, input: ChecklistInput) => void;
   excluirChecklist: (checklistId: string) => void;
@@ -188,6 +200,16 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
 
   const toggleItem = React.useCallback(
     (checklistId: string, itemId: string) => {
+      // Trava de "exige foto": não deixa concluir sem foto anexada (reforçada
+      // também por trigger no banco — ver migration 20260901120000).
+      const atual = (queryClient.getQueryData<Checklist[]>(QUERY_KEY) ?? [])
+        .find((c) => c.id === checklistId)
+        ?.itens.find((i) => i.id === itemId);
+      if (atual && atual.status !== "concluido" && atual.exigeFoto && !atual.fotoUrl) {
+        toast.error("Anexe uma foto para concluir esta tarefa.");
+        return;
+      }
+
       let next: ItemStatus = "concluido";
       // Atualização otimista: aplica a mudança no cache do React Query antes da
       // resposta do servidor, para o toque no checkbox parecer instantâneo.
@@ -227,6 +249,18 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
 
   const concluirTodos = React.useCallback(
     (checklistId: string) => {
+      // "Concluir rotina" não fura a regra da foto: se algum item pendente exige
+      // foto e não tem, aborta e avisa quais faltam.
+      const pendentesSemFoto = (queryClient.getQueryData<Checklist[]>(QUERY_KEY) ?? [])
+        .find((c) => c.id === checklistId)
+        ?.itens.filter((i) => i.status !== "concluido" && i.exigeFoto && !i.fotoUrl);
+      if (pendentesSemFoto && pendentesSemFoto.length > 0) {
+        toast.error(
+          `Anexe a foto de: ${pendentesSemFoto.map((i) => i.titulo).join(", ")}`,
+        );
+        return;
+      }
+
       queryClient.setQueryData<Checklist[]>(QUERY_KEY, (prev) =>
         (prev ?? []).map((c) =>
           c.id !== checklistId
@@ -267,6 +301,94 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
     [queryClient, reabrirMutation],
   );
 
+  const setFotoNoCache = React.useCallback(
+    (checklistId: string, itemId: string, url: string | undefined) => {
+      queryClient.setQueryData<Checklist[]>(QUERY_KEY, (prev) =>
+        (prev ?? []).map((c) => {
+          if (c.id !== checklistId) return c;
+          return {
+            ...c,
+            itens: c.itens.map((i) => {
+              if (i.id !== itemId) return i;
+              const semFoto: ChecklistItem = { ...i };
+              delete semFoto.fotoUrl;
+              return url ? { ...semFoto, fotoUrl: url } : semFoto;
+            }),
+          };
+        }),
+      );
+    },
+    [queryClient],
+  );
+
+  const anexarFotoMutation = useMutation({
+    mutationFn: async ({
+      itemId,
+      checklistId,
+      arquivo,
+    }: {
+      checklistId: string;
+      itemId: string;
+      arquivo: File;
+    }) => {
+      const ext =
+        arquivo.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const caminho = `${checklistId}/${itemId}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET_FOTOS)
+        .upload(caminho, arquivo, {
+          upsert: true,
+          ...(arquivo.type ? { contentType: arquivo.type } : {}),
+        });
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from(BUCKET_FOTOS).getPublicUrl(caminho);
+      const url = data.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from("checklist_items")
+        .update({ foto_url: url })
+        .eq("id", itemId);
+      if (updateError) throw updateError;
+
+      return { checklistId, itemId, url };
+    },
+    onSuccess: ({ checklistId, itemId, url }) => {
+      setFotoNoCache(checklistId, itemId, url);
+      toast.success("Foto anexada.");
+    },
+    onError: () => toast.error("Não foi possível anexar a foto."),
+  });
+
+  const removerFotoMutation = useMutation({
+    mutationFn: async ({ itemId }: { checklistId: string; itemId: string }) => {
+      const { error } = await supabase
+        .from("checklist_items")
+        .update({ foto_url: null })
+        .eq("id", itemId);
+      if (error) throw error;
+    },
+    onSuccess: (_dados, { checklistId, itemId }) => {
+      setFotoNoCache(checklistId, itemId, undefined);
+      toast.success("Foto removida.");
+    },
+    onError: () => toast.error("Não foi possível remover a foto."),
+  });
+
+  const anexarFoto = React.useCallback(
+    async (checklistId: string, itemId: string, arquivo: File) => {
+      await anexarFotoMutation.mutateAsync({ checklistId, itemId, arquivo });
+    },
+    [anexarFotoMutation],
+  );
+
+  const removerFoto = React.useCallback(
+    async (checklistId: string, itemId: string) => {
+      await removerFotoMutation.mutateAsync({ checklistId, itemId });
+    },
+    [removerFotoMutation],
+  );
+
   const criarChecklistMutation = useMutation({
     mutationFn: async (input: ChecklistInput) => {
       // Id da checklist é o slug do nome; se já existir (mesmo nome usado antes),
@@ -298,6 +420,7 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
         responsavel: it.responsavel,
         status: "pendente",
         posicao: index + 1,
+        exige_foto: it.exigeFoto,
       }));
 
       const { error: itensError } = await supabase.from("checklist_items").insert(itensPayload);
@@ -325,6 +448,10 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
         (c) => c.id === checklistId,
       );
       const statusPorId = new Map((atual?.itens ?? []).map((i) => [i.id, i.status]));
+      // Preserva a foto já anexada hoje quando o item sobrevive à edição.
+      const fotoPorId = new Map(
+        (atual?.itens ?? []).map((i) => [i.id, i.fotoUrl ?? null] as const),
+      );
       const idsUsados = new Set<string>();
 
       // Reconciliação de itens: o form manda "itemId" para itens que já existiam
@@ -346,6 +473,8 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
           responsavel: it.responsavel,
           status: statusPorId.get(id) ?? "pendente",
           posicao: index + 1,
+          exige_foto: it.exigeFoto,
+          foto_url: fotoPorId.get(id) ?? null,
         };
       });
 
@@ -422,6 +551,8 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
       toggleItem,
       concluirTodos,
       reabrir,
+      anexarFoto,
+      removerFoto,
       criarChecklist,
       editarChecklist,
       excluirChecklist,
@@ -433,6 +564,8 @@ export function GCheckProvider({ children }: { children: React.ReactNode }) {
       toggleItem,
       concluirTodos,
       reabrir,
+      anexarFoto,
+      removerFoto,
       criarChecklist,
       editarChecklist,
       excluirChecklist,

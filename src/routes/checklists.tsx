@@ -5,11 +5,13 @@ import { toast } from "sonner";
 import {
   CalendarDays,
   CalendarOff,
+  Camera,
   Check,
   ChevronDown,
   Clock,
   Eye,
   Filter,
+  Loader2,
   RotateCcw,
   Trash2,
   User,
@@ -87,6 +89,8 @@ function checklistDeSnapshot(e: ChecklistExecucaoRow, vivo: Checklist | undefine
       titulo: it.titulo,
       responsavel: it.responsavel,
       status: it.status === "concluido" ? "concluido" : "pendente",
+      exigeFoto: it.exige_foto ?? false,
+      ...(it.foto_url ? { fotoUrl: it.foto_url } : {}),
     })),
   };
 }
@@ -101,7 +105,11 @@ function checklistPendente(c: Checklist): Checklist {
     horario: c.horario,
     ativo: c.ativo,
     diasSemana: c.diasSemana,
-    itens: c.itens.map((i) => ({ ...i, status: "pendente" as const })),
+    // Dia que ainda não chegou: sem status e sem a foto do dia de hoje.
+    itens: c.itens.map(({ fotoUrl: _fotoUrl, ...i }) => ({
+      ...i,
+      status: "pendente" as const,
+    })),
   };
 }
 
@@ -365,6 +373,109 @@ function ExcluirChecklistButton({ c }: { c: Checklist }) {
   );
 }
 
+/**
+ * Anexo de foto de comprovação de um item. Quando `podeEditar`, mostra o botão
+ * de câmera (abre a galeria/câmera do aparelho); caso contrário fica só com a
+ * miniatura clicável (dia fechado / somente leitura). A trava de "não conclui
+ * sem foto" mora no store (toggleItem) e no banco (trigger).
+ */
+function AnexoFoto({
+  checklistId,
+  item,
+  podeEditar,
+}: {
+  checklistId: string;
+  item: ChecklistItem;
+  podeEditar: boolean;
+}) {
+  const { anexarFoto, removerFoto } = useGCheck();
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [enviando, setEnviando] = React.useState(false);
+
+  async function aoEscolher(ev: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!arquivo) return;
+    setEnviando(true);
+    try {
+      await anexarFoto(checklistId, item.id, arquivo);
+    } catch {
+      /* erro já sinalizado por toast no store */
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function aoRemover() {
+    setEnviando(true);
+    try {
+      await removerFoto(checklistId, item.id);
+    } catch {
+      /* toast no store */
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {item.fotoUrl ? (
+        <a href={item.fotoUrl} target="_blank" rel="noreferrer" className="shrink-0">
+          <img
+            src={item.fotoUrl}
+            alt={`Foto de ${item.titulo}`}
+            className="size-14 rounded-lg border border-border object-cover"
+          />
+        </a>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-1 text-xs font-medium text-muted-foreground">
+          <Camera className="size-3" />
+          {podeEditar ? "Foto obrigatória" : "Sem foto"}
+        </span>
+      )}
+
+      {podeEditar && (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            onChange={aoEscolher}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 px-2 text-xs"
+            disabled={enviando}
+            onClick={() => inputRef.current?.click()}
+          >
+            {enviando ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Camera className="size-3.5" />
+            )}
+            {item.fotoUrl ? "Trocar" : "Anexar foto"}
+          </Button>
+          {item.fotoUrl && (
+            <button
+              type="button"
+              onClick={aoRemover}
+              disabled={enviando}
+              aria-label="Remover foto"
+              className="rounded-full p-1 text-muted-foreground hover:bg-foreground/10 hover:text-destructive disabled:opacity-50"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ChecklistCard({
   c,
   destacar = false,
@@ -499,11 +610,13 @@ function ChecklistCard({
               // 20260824140000_restrict_item_status_to_responsavel.sql.
               const podeMarcar =
                 !bloqueado && !somenteLeitura && (isAdmin || ehResponsavel(i, profile?.nome));
+              // Item que pede foto e ainda não tem: não dá pra concluir (só reabrir).
+              const fotoPendente = i.exigeFoto && !i.fotoUrl && !feito;
               return (
                 <li key={i.id} className="flex items-start gap-3 py-3">
                   <button
-                    onClick={() => podeMarcar && toggleItem(c.id, i.id)}
-                    disabled={!podeMarcar}
+                    onClick={() => podeMarcar && !fotoPendente && toggleItem(c.id, i.id)}
+                    disabled={!podeMarcar || fotoPendente}
                     aria-label={
                       bloqueado
                         ? "Rotina desativada hoje"
@@ -511,16 +624,19 @@ function ChecklistCard({
                           ? "Somente leitura — abra o dia de hoje para marcar"
                           : !podeMarcar
                             ? `Item atribuído a ${i.responsavel}`
-                            : feito
-                              ? `Reabrir ${i.titulo}`
-                              : `Concluir ${i.titulo}`
+                            : fotoPendente
+                              ? `Anexe uma foto para concluir ${i.titulo}`
+                              : feito
+                                ? `Reabrir ${i.titulo}`
+                                : `Concluir ${i.titulo}`
                     }
                     className={cn(
                       "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
                       feito
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-input hover:border-primary",
-                      !podeMarcar && "cursor-not-allowed opacity-50 hover:border-input",
+                      (!podeMarcar || fotoPendente) &&
+                        "cursor-not-allowed opacity-50 hover:border-input",
                     )}
                   >
                     {feito && <Check className="size-3.5" />}
@@ -540,6 +656,13 @@ function ChecklistCard({
                     <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <User className="size-3" /> {i.responsavel}
                     </p>
+                    {i.exigeFoto && (
+                      <AnexoFoto
+                        checklistId={c.id}
+                        item={i}
+                        podeEditar={podeMarcar && !feito}
+                      />
+                    )}
                   </div>
                 </li>
               );
@@ -656,25 +779,29 @@ function TarefaRow({
   const { toggleItem } = useGCheck();
   const { checklist: c, item: i, estado: est } = tarefa;
   const feito = i.status === "concluido";
+  // Tarefa que exige foto e ainda não tem: bloqueia a conclusão até anexar.
+  const fotoPendente = i.exigeFoto && !i.fotoUrl && !feito;
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
       <button
-        onClick={() => !bloqueado && toggleItem(c.id, i.id)}
-        disabled={bloqueado}
+        onClick={() => !bloqueado && !fotoPendente && toggleItem(c.id, i.id)}
+        disabled={bloqueado || fotoPendente}
         aria-label={
           bloqueado
             ? "Rotina desativada hoje"
-            : feito
-              ? `Reabrir ${i.titulo}`
-              : `Concluir ${i.titulo}`
+            : fotoPendente
+              ? `Anexe uma foto para concluir ${i.titulo}`
+              : feito
+                ? `Reabrir ${i.titulo}`
+                : `Concluir ${i.titulo}`
         }
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
           feito
             ? "border-primary bg-primary text-primary-foreground"
             : "border-input hover:border-primary",
-          bloqueado && "cursor-not-allowed opacity-50 hover:border-input",
+          (bloqueado || fotoPendente) && "cursor-not-allowed opacity-50 hover:border-input",
         )}
       >
         {feito && <Check className="size-3.5" />}
@@ -690,6 +817,9 @@ function TarefaRow({
           {i.titulo}
         </p>
         <p className="truncate text-xs text-muted-foreground">{c.nome}</p>
+        {i.exigeFoto && (
+          <AnexoFoto checklistId={c.id} item={i} podeEditar={!bloqueado && !feito} />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-3 pl-8 sm:pl-0">
