@@ -54,20 +54,80 @@ import {
 } from "@/lib/dias-desativados";
 import {
   ehResponsavel,
-  estado,
-  estadoLabel,
   labelDiasSemana,
   progresso,
   rodaNoDia,
   turnos,
   useGCheck,
   type Checklist,
-  type ChecklistEstado,
   type ChecklistItem,
   type Turno,
 } from "@/lib/g-check-store";
 
-const ESTADOS_VALIDOS: ChecklistEstado[] = ["pendente", "em_andamento", "atrasada", "concluido"];
+/**
+ * Estado exibido na checklist — mais granular que o do painel:
+ *  - `nao_iniciada` — a rotina ainda não chegou no horário programado (fora da
+ *    janela) e ninguém começou;
+ *  - `pendente` — já está no horário, mas nenhum item foi feito (amarelo);
+ *  - `em_andamento` — algum item já foi concluído, mas não todos (azul);
+ *  - `atrasada` — passou do tempo limite sem concluir (vermelho);
+ *  - `concluido` — todos os itens feitos (verde).
+ */
+export type EstadoVista =
+  | "nao_iniciada"
+  | "pendente"
+  | "em_andamento"
+  | "atrasada"
+  | "concluido";
+
+const ESTADOS_VALIDOS: EstadoVista[] = [
+  "nao_iniciada",
+  "pendente",
+  "em_andamento",
+  "atrasada",
+  "concluido",
+];
+
+/** Minutos desde a meia-noite de um horário "HH:MM". */
+function minutosHHMM(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * Estado ao vivo de uma rotina de hoje. A ordem das checagens define a
+ * prioridade: concluída > atrasada > em andamento > pendente/não iniciada.
+ */
+function estadoVista(c: Checklist, agora: Date = new Date()): EstadoVista {
+  const { feitos, total } = progresso(c);
+  if (total > 0 && feitos === total) return "concluido";
+  const agoraMin = agora.getHours() * 60 + agora.getMinutes();
+  if (c.tempoLimite && agoraMin > minutosHHMM(c.tempoLimite)) return "atrasada";
+  if (feitos > 0) return "em_andamento";
+  // Nada feito e dentro do prazo: "pendente" quando o horário da rotina já
+  // chegou; senão ainda está fora da janela de programação = "não iniciada".
+  return agoraMin >= minutosHHMM(c.horario) ? "pendente" : "nao_iniciada";
+}
+
+/**
+ * Estado do card conforme o dia em foco. Só o dia de hoje tem relógio ao vivo;
+ * nos dias só-leitura (passado/futuro) "nada feito" é sempre "não iniciada".
+ */
+function estadoVistaCard(c: Checklist, ehHoje: boolean): EstadoVista {
+  if (ehHoje) return estadoVista(c);
+  const { feitos, total } = progresso(c);
+  if (total > 0 && feitos === total) return "concluido";
+  return feitos > 0 ? "em_andamento" : "nao_iniciada";
+}
+
+/** Rótulo + classes do badge de cada estado da checklist. */
+const ESTADO_VISTA_UI: Record<EstadoVista, { label: string; classe: string }> = {
+  nao_iniciada: { label: "Não iniciada", classe: "bg-muted text-muted-foreground" },
+  pendente: { label: "Pendente", classe: "bg-chart-4/20 text-chart-4" },
+  em_andamento: { label: "Em andamento", classe: "bg-info/15 text-info" },
+  atrasada: { label: "Atrasada", classe: "bg-destructive/15 text-destructive" },
+  concluido: { label: "Concluído", classe: "bg-success/15 text-success" },
+};
 
 /**
  * Monta um `Checklist` somente-leitura a partir do snapshot de um dia já fechado
@@ -119,7 +179,7 @@ function checklistPendente(c: Checklist): Checklist {
  * fica compartilhável/versionável pelo histórico do navegador.
  */
 export interface ChecklistSearch {
-  estados?: ChecklistEstado[] | undefined;
+  estados?: EstadoVista[] | undefined;
   turnos?: Turno[] | undefined;
   /** id da checklist que deve abrir expandida e receber scroll ao entrar na página. */
   checklist?: string | undefined;
@@ -153,9 +213,7 @@ export const Route = createFileRoute("/checklists")({
     const rawVista = search["vista"];
 
     const estados = Array.isArray(rawEstados)
-      ? rawEstados.filter((e): e is ChecklistEstado =>
-          ESTADOS_VALIDOS.includes(e as ChecklistEstado),
-        )
+      ? rawEstados.filter((e): e is EstadoVista => ESTADOS_VALIDOS.includes(e as EstadoVista))
       : undefined;
     const turnosSearch = Array.isArray(rawTurnos)
       ? rawTurnos.filter((t): t is Turno => (turnos as readonly string[]).includes(t as string))
@@ -176,8 +234,9 @@ export const Route = createFileRoute("/checklists")({
   component: ChecklistsPage,
 });
 
-const estadoOptions: { id: ChecklistEstado; label: string }[] = [
-  { id: "pendente", label: "Não iniciados" },
+const estadoOptions: { id: EstadoVista; label: string }[] = [
+  { id: "nao_iniciada", label: "Não iniciadas" },
+  { id: "pendente", label: "Pendentes" },
   { id: "em_andamento", label: "Em andamento" },
   { id: "atrasada", label: "Atrasadas" },
   { id: "concluido", label: "Concluídos" },
@@ -198,9 +257,9 @@ function FiltrosChecklist({
   onToggleTurno,
   onLimpar,
 }: {
-  estadosSelecionados: ChecklistEstado[];
+  estadosSelecionados: EstadoVista[];
   turnosSelecionados: Turno[];
-  onToggleEstado: (id: ChecklistEstado) => void;
+  onToggleEstado: (id: EstadoVista) => void;
   onToggleTurno: (id: Turno) => void;
   onLimpar: () => void;
 }) {
@@ -264,7 +323,7 @@ function FiltrosChecklist({
           {estadoOptions.find((o) => o.id === id)?.label}
           <button
             onClick={() => onToggleEstado(id)}
-            aria-label={`Remover filtro ${estadoLabel[id]}`}
+            aria-label={`Remover filtro ${estadoOptions.find((o) => o.id === id)?.label ?? id}`}
             className="rounded-full p-0.5 hover:bg-foreground/10"
           >
             <X className="size-3" />
@@ -295,20 +354,11 @@ function FiltrosChecklist({
   );
 }
 
-function EstadoBadge({ c }: { c: Checklist }) {
-  const e = estado(c);
+function EstadoBadge({ c, ehHoje = true }: { c: Checklist; ehHoje?: boolean }) {
+  const ui = ESTADO_VISTA_UI[estadoVistaCard(c, ehHoje)];
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "border-transparent font-medium",
-        e === "concluido" && "bg-success/15 text-success",
-        e === "em_andamento" && "bg-chart-4/20 text-chart-4",
-        e === "atrasada" && "bg-destructive/15 text-destructive",
-        e === "pendente" && "bg-muted text-muted-foreground",
-      )}
-    >
-      {estadoLabel[e]}
+    <Badge variant="outline" className={cn("border-transparent font-medium", ui.classe)}>
+      {ui.label}
     </Badge>
   );
 }
@@ -569,7 +619,7 @@ function ChecklistCard({
               ) : diaFechado ? (
                 <BadgeDiaFechado c={c} />
               ) : (
-                <EstadoBadge c={c} />
+                <EstadoBadge c={c} ehHoje={!somenteLeitura} />
               )}
               {!bloqueado && (
                 <ChevronDown
@@ -749,17 +799,20 @@ const fmtDiaLongo = new Intl.DateTimeFormat("pt-BR", {
 /**
  * Uma tarefa (item) do funcionário: o item em si, a rotina a que pertence e o
  * estado derivado só daquela tarefa — concluída, atrasada (rotina passou do
- * tempo limite sem terminar) ou pendente.
+ * tempo limite sem terminar), pendente (no horário) ou não iniciada (rotina
+ * ainda fora da janela). Um item nunca fica "em andamento".
  */
 interface TarefaFuncionario {
   checklist: Checklist;
   item: ChecklistItem;
-  estado: ChecklistEstado;
+  estado: EstadoVista;
 }
 
-function estadoDaTarefa(c: Checklist, i: ChecklistItem): ChecklistEstado {
+function estadoDaTarefa(c: Checklist, i: ChecklistItem, ehHoje: boolean): EstadoVista {
   if (i.status === "concluido") return "concluido";
-  return estado(c) === "atrasada" ? "atrasada" : "pendente";
+  if (!ehHoje) return "nao_iniciada";
+  const ev = estadoVista(c);
+  return ev === "atrasada" ? "atrasada" : ev === "nao_iniciada" ? "nao_iniciada" : "pendente";
 }
 
 /**
@@ -834,14 +887,9 @@ function TarefaRow({
         </div>
         <Badge
           variant="outline"
-          className={cn(
-            "shrink-0 border-transparent font-medium",
-            est === "concluido" && "bg-success/15 text-success",
-            est === "atrasada" && "bg-destructive/15 text-destructive",
-            est === "pendente" && "bg-muted text-muted-foreground",
-          )}
+          className={cn("shrink-0 border-transparent font-medium", ESTADO_VISTA_UI[est].classe)}
         >
-          {estadoLabel[est]}
+          {ESTADO_VISTA_UI[est].label}
         </Badge>
       </div>
     </li>
@@ -918,7 +966,7 @@ function ChecklistsPage() {
   const turnosSelecionados = React.useMemo(() => turnosSearch ?? [], [turnosSearch]);
 
   const toggleEstado = React.useCallback(
-    (id: ChecklistEstado) => {
+    (id: EstadoVista) => {
       navigate({
         search: (prev) => {
           const atuais = prev.estados ?? [];
@@ -1038,11 +1086,14 @@ function ChecklistsPage() {
       return false;
     }
     if (!ehHoje) {
-      return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
+      return (
+        estadosSelecionados.length === 0 ||
+        estadosSelecionados.includes(estadoVistaCard(c, false))
+      );
     }
     if (diaSemanaAlvo !== null && !c.diasSemana.includes(diaSemanaAlvo)) return false;
     if (foraDoDia(c)) return isAdmin && estadosSelecionados.length === 0;
-    return estadosSelecionados.length === 0 || estadosSelecionados.includes(estado(c));
+    return estadosSelecionados.length === 0 || estadosSelecionados.includes(estadoVista(c));
   });
 
   // Funcionário não vê a rotina inteira: percorre os itens atribuídos a ele
@@ -1062,7 +1113,7 @@ function ChecklistsPage() {
         .flatMap((c) =>
           c.itens
             .filter((i) => ehResponsavel(i, profile?.nome))
-            .map((i) => ({ checklist: c, item: i, estado: estadoDaTarefa(c, i) })),
+            .map((i) => ({ checklist: c, item: i, estado: estadoDaTarefa(c, i, ehHoje) })),
         )
         .filter((t) => estadosSelecionados.length === 0 || estadosSelecionados.includes(t.estado))
         .sort(

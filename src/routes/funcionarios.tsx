@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
 import { useAuth, type Profile } from "@/lib/auth-store";
 import { criarFuncionario, editarFuncionario, excluirFuncionario } from "@/lib/employees-fn";
 import { fetchProfiles, PROFILES_QUERY_KEY } from "@/lib/profiles";
-import { resumoDe, tarefasPorFuncionario, useGCheck } from "@/lib/g-check-store";
+import { resumoDe, rodaNoDia, tarefasPorFuncionario, useGCheck } from "@/lib/g-check-store";
 
 export const Route = createFileRoute("/funcionarios")({
   head: () => ({
@@ -346,8 +346,11 @@ function ExcluirFuncionarioButton({ profile }: { profile: Profile }) {
 function FuncionariosPage() {
   const { isAdmin, isLoading: authLoading, session } = useAuth();
   const { checklists } = useGCheck();
+  // O resumo de pendências de cada funcionário considera só as rotinas que rodam
+  // hoje: a marca de "pendente" aparece quando a pessoa tem tarefa do dia ainda
+  // não concluída.
   const porFuncionario = React.useMemo(
-    () => tarefasPorFuncionario(checklists),
+    () => tarefasPorFuncionario(checklists.filter((c) => c.ativo && rodaNoDia(c))),
     [checklists],
   );
   const query = useQuery({

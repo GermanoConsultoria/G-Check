@@ -699,10 +699,20 @@ export function estado(c: Checklist, agora: Date = new Date()): ChecklistEstado 
 
 export const estadoLabel: Record<ChecklistEstado, string> = {
   concluido: "Concluído",
-  em_andamento: "Em andamento",
+  em_andamento: "Pendente",
   pendente: "Não iniciado",
   atrasada: "Atrasada",
 };
+
+/**
+ * Rotina ainda "não iniciada": nada foi feito, está no prazo e o horário de
+ * início ainda não chegou. Enquanto está nesse ponto, o painel não a cobra —
+ * fica fora de pendências, taxa de execução e das quebras por funcionário/setor.
+ * A partir do horário (mesmo sem nenhum item feito) ela passa a contar.
+ */
+export function naoIniciada(c: Checklist, agora: Date = new Date()): boolean {
+  return estado(c, agora) === "pendente" && minutosDoDia(agora) < minutosDoDia(c.horario);
+}
 
 /** Compara o responsável do item com o nome de perfil informado (ignora caixa e espaços). */
 export function ehResponsavel(item: ChecklistItem, nome?: string | null) {

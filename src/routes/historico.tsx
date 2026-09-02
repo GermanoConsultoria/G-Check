@@ -62,7 +62,7 @@ const ESTILO: Record<
     pill: "bg-muted text-muted-foreground",
   },
   hoje: {
-    label: "Em andamento",
+    label: "Pendente",
     dot: "bg-chart-4",
     texto: "text-chart-4",
     pill: "bg-chart-4/20 text-chart-4",

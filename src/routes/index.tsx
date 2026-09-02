@@ -59,6 +59,7 @@ import {
   ehResponsavel,
   estado,
   estadoLabel,
+  naoIniciada,
   progresso,
   rodaNoDia,
   tarefasPorFuncionario,
@@ -611,22 +612,38 @@ function Dashboard() {
 
   const totais = visiveis.reduce(
     (acc, c) => {
-      const p = progresso(c);
-      acc.itens += p.total;
-      acc.feitos += p.feitos;
-      acc.pendentes += p.pendentes;
+      acc.pendentes += progresso(c).pendentes;
       const e = estado(c);
       if (e === "concluido") acc.rotinasConcluidas += 1;
       if (e === "atrasada") acc.rotinasAtrasadas += 1;
       return acc;
     },
-    { itens: 0, feitos: 0, pendentes: 0, rotinasConcluidas: 0, rotinasAtrasadas: 0 },
+    { pendentes: 0, rotinasConcluidas: 0, rotinasAtrasadas: 0 },
   );
 
-  const taxa = totais.itens ? Math.round((totais.feitos / totais.itens) * 100) : 0;
+  // Só a taxa de execução ignora rotinas ainda "não iniciadas" (nada feito e
+  // antes do horário de início): incluí-las derrubaria o índice antes da hora.
+  // Pendências, tabelas por funcionário/setor e o resto contam todas as rotinas.
+  const taxaBase = visiveis
+    .filter((c) => !naoIniciada(c))
+    .reduce(
+      (acc, c) => {
+        const p = progresso(c);
+        acc.itens += p.total;
+        acc.feitos += p.feitos;
+        return acc;
+      },
+      { itens: 0, feitos: 0 },
+    );
+  const taxa = taxaBase.itens ? Math.round((taxaBase.feitos / taxaBase.itens) * 100) : 0;
+  // Destaca itens de rotinas que já estão sendo cobradas: "pendente" (no
+  // horário, nada feito), "em andamento" ou "atrasada". Fica de fora o que
+  // ainda não iniciou (antes da hora) e o que foi concluído.
   const pendencias = visiveis
+    .filter((c) => !naoIniciada(c) && estado(c) !== "concluido")
     .flatMap((c) => c.itens.filter((i) => i.status === "pendente").map((i) => ({ c, i })))
     .slice(0, 6);
+  const tudoConcluido = visiveis.length > 0 && visiveis.every((c) => estado(c) === "concluido");
 
   // Distribuição das tarefas (itens) por responsável e por setor — só faz
   // sentido para o admin, que enxerga todas as checklists ativas.
@@ -659,7 +676,7 @@ function Dashboard() {
             hint={hojeDesativado ? "rotinas pausadas hoje" : "itens aguardando execução"}
             icon={AlertCircle}
             tone="warn"
-            search={{ estados: ["pendente", "em_andamento", "atrasada"] }}
+            search={{ estados: ["nao_iniciada", "pendente", "em_andamento", "atrasada"] }}
           />
           <Metric
             label="Rotinas atrasadas"
@@ -686,7 +703,7 @@ function Dashboard() {
           <Metric
             label="Taxa de execução"
             value={`${taxa}%`}
-            hint={`${totais.feitos} de ${totais.itens} itens`}
+            hint={`${taxaBase.feitos} de ${taxaBase.itens} itens`}
             icon={TrendingUp}
             tone="primary"
           />
@@ -782,7 +799,9 @@ function Dashboard() {
               ))}
               {pendencias.length === 0 && visiveis.length > 0 && (
                 <li className="rounded-xl bg-primary/10 p-4 text-sm text-primary">
-                  Todas as rotinas do dia estão concluídas.
+                  {tudoConcluido
+                    ? "Todas as rotinas do dia estão concluídas."
+                    : "As rotinas de hoje ainda não começaram."}
                 </li>
               )}
               {hojeDesativado && (
